@@ -1,0 +1,62 @@
+[package]
+name = "Install"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "*", features = ["full"] }#:全域执行async/await>
+futures = "*"#:区域执行async/await>
+async-trait = "*"#:async-trait>[1.68<=版本使用]
+lazy_static = "*"#:惰性初始>
+once_cell = "*"#:|Cell模式全局数据>
+itertools = "*"#:迭代器>
+stretto = { version = "*", features = ["full"] }#:缓存>
+spin = "*"#:|自旋锁>
+arc-swap = "*"#:原子锁>
+anyhow = "*"#:Result兼容处理>
+serde = { version = "*", features = ["derive"] }#:数据序列>
+serde_json = "*"#:json序列>
+quick-xml = { version = "*", features = ["serde", "async-tokio", "serialize", "serde-types", "overlapped-lists"] }#:配置文件>
+serde_json_borrow = "*"#:json>
+toml = { version = "*", features = ["indexmap"] }#:toml>
+hashbrown = { version = "*", features = ["serde", "ahash", "rayon"] }#:|哈希(性能)>
+serde_yaml = "*"#:yaml>
+cacache = { version = "*", features = ["tokio-stream", "async-std", "link_to", "mmap"] }#:磁盘>
+ssri = "*"#:磁盘必须hash>
+rbatis = { version = "*", features = ["rbatis-macro-driver"] }#:ORM(A)Mysql>
+rbdc = "*"#:ORM(B)Mysql>
+rbdc-mysql = "*"#:ORM(C)Mysql>
+rbs = "*"#ORM(D)Mysql>
+rbdc-pg = "*"#:PostgreSQL(E)>
+sysinfo = "=0.29.0"#:系统信息>
+sea-orm = { version = "*", features = ["sqlx-postgres", "sqlx-mysql", "runtime-tokio", "runtime-tokio-native-tls", "macros", "sea-orm-macros", "sea-query-binder", "postgres-array", "with-json", "with-chrono", "uuid", "mock"] }#:ORM>
+sea-query = { version = "*", features = ["postgres-types", "postgres-interval", "postgres-array", "backend-mysql", "backend-postgres", "thread-safe", "attr", "derive"] }#:动态查询>
+deadpool-redis = { version = "*", features = ["serde"] }#:Redis链接>
+redis = { version = "*", features = ["tokio"] }#:Redis链接通用>
+#mysql_async = "*"#:Mysql语句执行>
+tokio-postgres = "*"#:postgres语句执行>
+bytes = "*"#:编码>
+#data-encoding = "*"#:数据编码>
+uuid = { version = "*", features = ["v4", "v7"] }#:ID>
+memmap = "*"#内存映射文件>
+rayon = "*"#:并行>
+chrono = "*"#:Mysql|时间>
+bevy_reflect = { version = "*", features = ["bevy_math", "documentation", "smallvec", "glam"] }#:反射>
+indicatif = { version = "*", features = ["rayon", "improved_unicode"] }#:阶段显示>
+opener = "*"#:默认开启>
+Static = { path = "../Static" }
+View = { path = "../View" }
+Error = { path = "../Error" }
+#Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>
+actix-cors = "*"#:Web性能A>
+actix-web = { version = "*", features = ["secure-cookies", "actix-web-codegen"] }#:Web性能B>
+actix-rt = { version = "*", features = ["actix-macros", "tokio-uring"] }#:Web性能C>
+actix-files = { version = "*", features = ["actix-server"] }#:Web功能D>
+#rocket = "*"#:Web安全>
+tower = { version = "*", features = ["full"] }#:Web构建>
+jsonwebtoken = "*"#:json验证>
+#warp = {version = "*", features = ["websocket","tokio-tungstenite"]}#:https构建
+#askama = "*"#:html>
+#Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>

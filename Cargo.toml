@@ -1,0 +1,207 @@
+[package]
+name = "V3"
+version = "0.1.0"
+edition = "2021"
+#description = "Distributed storage database"
+#keywords = []
+#categories = []
+#readme = "README.md"
+#homepage = ""
+#repository = ""
+[badges]
+maintenance = { status = "InTheOptimization" }
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+#async<+>async<+>async<+>async<+>async<+>async<+>async<+>async<+>async<+>
+tokio = { version = "*", features = ["full"] }#:全域执行async/await>
+#tokio-graceful = "*"#:async/await控制级>
+futures = "*"#:区域执行async/await>
+async-trait = "*"#:async-trait>[1.68<=版本使用]
+flume = { version = "*", features = ["async"] }#:std.mpsc替代>
+rayon = "*"#:并行>
+bevy_reflect = { version = "*", features = ["bevy_math", "documentation", "smallvec", "glam"] }#:反射>
+#monoio = "*"#:runtime>
+core_affinity = "*"#:cpu负载>
+#async<+>async<+>async<+>async<+>async<+>async<+>async<+>async<+>async<+>
+
+#database<+>database<+>database<+>database<+>database<+>database<+>database<+>
+#chrono = "*"#:Mysql|时间>
+#rbatis = { version = "*", features = ["rbatis-macro-driver"] }#:ORM(A)Mysql>
+#rbdc = "*"#:ORM(B)Mysql>
+#rbdc-mysql = "*"#:ORM(C)Mysql>
+#rbs = "*"#ORM(D)Mysql>
+#rbdc-pg = "*"#:PostgreSQL(E)>
+#mysql_async = "*"#:Mysql语句执行>
+#deadpool-redis = { version = "*", features = ["serde"] }#:Redis链接>
+sea-orm = { version = "*", features = ["sqlx-postgres", "sqlx-mysql", "runtime-tokio", "runtime-tokio-native-tls", "macros", "postgres-array", "with-json", "with-chrono", "uuid"] }#:ORM>
+sea-query = { version = "*", features = ["postgres-types", "postgres-interval", "postgres-array", "backend-mysql", "backend-postgres", "thread-safe", "attr", "derive"] }#:动态查询>
+#database<+>database<+>database<+>database<+>database<+>database<+>database<+>
+
+#serialization<+>serialization<+>serialization<+>serialization<+>serialization<+>
+serde = { version = "*", features = ["derive"] }#:数据序列>
+#serde_json = "*"#:json序列>
+#serde_json_borrow = "*"#:json>
+struson = "*"#:快捷写入>
+#serde_yaml = "*"#:yaml>
+#toml = {version = "*", features = ["indexmap"]}#:toml>
+schemars = { version = "*", features = ["url", "enumset", "arrayvec07"] }#:代码json>
+#bincode = "*"#:结构编码>
+#data-encoding = "*"#:数据编码>
+#combine = "*"#:数据解析>
+#nom = "*"#:语法解析>
+#datafusion = "*"#:Apache查询引擎>
+bytes = { version = "*", features = ["serde"] }#:|字节处理>
+#quick-xml = { version = "*", features = ["serde", "async-tokio", "serialize"] }#:配置文件>
+#csv = "*"#:csv解析>
+#rust_decimal="*"#:小数>
+itertools = "*"#:迭代器>
+#serialization<+>serialization<+>serialization<+>serialization<+>serialization<+>
+
+#thread<+>thread<+>thread<+>thread<+>thread<+>thread<+>thread<+>thread<+>thread<+>
+#kanal = "0.1.0-pre7"#:线程通信Bata>
+#thread_local = "*"#:线程数据副本>
+#thread<+>thread<+>thread<+>thread<+>thread<+>thread<+>thread<+>thread<+>thread<+>
+
+#dataInitial<+>dataInitial<+>dataInitial<+>dataInitial<+>dataInitial<+>dataInitial<+>
+lazy_static = "*"#:惰性初始>
+once_cell = "*"#:|Cell模式全局数据>
+#stretto = { version = "*", features = ["full"] }#:缓存>
+arc-swap = "*"#:原子锁>
+#sync_cow = "*"#:读写克隆>
+#cacache = { version = "*", features = ["tokio-stream","async-std"] }#:磁盘>
+#dataInitial<+>dataInitial<+>dataInitial<+>dataInitial<+>dataInitial<+>dataInitial<+>
+
+#dataOptimization<+>dataOptimization<+>dataOptimization<+>dataOptimization<+>dataOptimization<+>
+hashbrown = { version = "*", features = ["serde", "ahash", "rayon"] }#:|哈希(性能)>
+spin = "*"#:|自旋锁>
+parking_lot = { version = "0.12", features = ["deadlock_detection"] }#:数据锁>
+intrusive-collections = "*"#:聚合表>
+#compact_str = "*"#:String优化版>
+#bincode = "*"#:编码转译>
+#bytes = "*"#:编码>
+ph = "*"#:hash数组>
+im = { version = "*", features = ["arbitrary", "proptest", "serde", "refpool", "rayon", "quickcheck"] }#:允许多个引用的向量>
+#data-encoding = "*"#:数据编码>
+#dataOptimization<+>dataOptimization<+>dataOptimization<+>dataOptimization<+>dataOptimization<+>
+
+#eventHandling<+>eventHandling<+>eventHandling<+>eventHandling<+>eventHandling<+>eventHandling<+>
+jni = "*"#:java交互>
+#num-bigint = { version = "*", features = ["rand"] }#:大随机(rand=0.8可兼容)>
+#async-stream = "*"#:异步迭代>
+#async-graphql = { version = "*", features = ["tokio", "url", "uuid", "cbor", "hashbrown", "bson"] }#:请求机>
+#libc = "*"#:c类型>
+memmap = "*"#内存映射文件>
+anyhow = "*"#:Result兼容处理>
+thiserror = "*"#:错误指定>
+fast_log = "*"#:log(B)>
+ftlog = "*"#log(C)>
+opener = "*"#:默认开启>
+#whoami = "*"#:环境ID>
+#dotenv = "*"#:环境解析>
+#sha256 = "*"#:文件hash>
+#configparser="*"#:文件启动>
+#comfy-table = "*"#:Shll界面>
+#dialoguer = { version = "*", features = ["fuzzy-matcher", "fuzzy-select", "history", "completion"] }#:shell>
+#clap = { version = "*", features = ["derive", "deprecated", "env", "wrap_help", "string"] }#:Shll命令解析>
+sysinfo = "*"#:系统信息>
+#enigo = { github = "https://github.com/enigo-rs/enigo" }#:操作键盘>
+#async-channel = "*"#:线程通信>
+#eventHandling<+>eventHandling<+>eventHandling<+>eventHandling<+>eventHandling<+>eventHandling<+>
+
+#network<+>network<+>network<+>network<+>network<+>network<+>network<+>network<+>network<+>
+uuid = { version = "*", features = ["v4", "v7"] }#:ID>
+#ssh-rs = "*"#:ssh>
+#reqwest = { version = "*", features = ["json", "socks", "stream", "blocking"] }#:http处理[单线程阻塞]A>
+#scraper = "*"#:Css解析http处理B>
+tarpc = { version = "*", features = ["tokio1", "serde1", "serde-transport", "serde-transport-json", "tokio-serde"] }#:RPC>
+quinn = { version = "*", features = ["futures-io", "lock_tracking"] }#:QUIC>
+opendal = { version = "*", features = ["services-ftp"] }#:文件存储>
+#async-graphql = { version = "*", features = ["tokio", "url", "uuid", "cbor", "hashbrown", "dataloader"] }#:请求机>
+#native-tls = { version = "*", features = ["alpn", "vendored"] }#:tls网络>
+#pyo3 = {version ="*",features = ["extension-module"] }#:python交互>
+#network<+>network<+>network<+>network<+>network<+>network<+>network<+>network<+>network<+>
+
+#Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>
+#actix-cors = "*"#:Web性能A>
+actix-web = { version = "*", features = ["secure-cookies", "actix-web-codegen"] }#:Web性能B>
+#actix-rt = { version = "*", features = ["actix-macros", "tokio-uring"] }#:Web性能C>
+#actix-files = { version = "*", features = ["actix-server"] }#:Web功能D>
+#rocket = "*"#:Web安全>
+#tower = { version = "*", features = ["full"] }#:Web构建>
+#jsonwebtoken = "*"#:json验证>
+#warp = {version = "*", features = ["websocket","tokio-tungstenite"]}#:https构建
+askama = "*"#:html>
+#Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>Web<+>
+
+#NativeLibrary<+>NativeLibrary<+>NativeLibrary<+>NativeLibrary<+>NativeLibrary<+>NativeLibrary<+>
+#XX={path = ""}
+Error = { path = "./src/Error" }
+Static = { path = "./src/Static" }
+View = { path = "./src/View" }
+Install = { path = "src/Install" }
+
+#NativeLibrary<+>NativeLibrary<+>NativeLibrary<+>NativeLibrary<+>NativeLibrary<+>NativeLibrary<+>
+[workspace]#[集中构建]
+members = ["./src/Error", "./src/Static", "./src/View", "./src/Install"]
+[build-dependencies]#:[构建包]
+#tonic-build = "*"
+#[lib]#[高可用库]
+#path = "./src/main.rs"
+#crate_type = ["staticlib", "cdylib"]#"dylib"
+[profile.dev]#[Debug]
+codegen-units = 64
+incremental = true
+[profile.release]#[Release]
+opt-level = 3
+codegen-units = 1
+strip = true
+panic = "abort"
+lto = true
+[profile.release.build-override]#[构建依赖]
+opt-level = 3
+codegen-units = 1
+strip = true
+#[profile.release-lto]#[自定义构建]
+#inherits = "release"
+#lto = true
+#[source.ustc]
+#registry = "git://mirrors.ustc.edu.cn/crates.io-index"
+#源配置
+# #[tokio::main(flavor = "multi_thread")]// 等价于#[%{HOME}::main]
+# #[%{HOME}::main(flavor = "current_thread")]//基本調度程序是單線程的
+#演示
+#[[example]]
+#name = "Nebula"
+#path = "src/main.rs"
+#++++++++++++++++++|++++++++++++|
+#cargo new {%HOME%}|创建项目[bin]
+#++++++++++++++++++|+++++|+++++++++++|
+#cargo new --lib {%HOME%}|创建项目[lib]
+#++++++++++++++++|+++++++|+++++++++++|
+#cargo doc --open|文档生成
+#+++++++++++|++++|+++++++|++++++++++++++++++|+++++++++++++++++++++++++|
+#cargo test & cargo test -- --test-threads=1|测试 [test]测试,[ignore]忽略
+#++++++++++++++++++++++++++++++++++++|++++++|++++|++++++++++++++++++++|
+#cargo build & cargo build --release |构建
+#+++++++++++++++++++++|++++++++++++++|++++++|
+#cargo install --path |下载
+#++++++++++++|++++++++|+++|
+#cargo check |检查
+#++++++++++++|+|+++|
+#rustup update |cargo update|更新
+#++++++++++++++|+++++++++++++++++++|+++++++++|
+#rustup default stable/nightly/Beta|默认版本切换
+#++++++++++++++++++++++|+++++++++++|
+#rustup toolchain list |模式查看
+#+++++++++++++++|++++++|
+#rustc --version|查看版本
+#+++++++++++++++|++|++++++++++++++++++++++++++++++++++++++++++++++++++++++|
+#cargo install crm |源更换 crm best[自动更换],crm publish官方源执行cargo publish
+#+++++++++++++++|++|+++++++|++++++++++++++++++++++++++++++++++++++++++++++|
+#rustup component add miri |测试代码 cargo miri[使用],cargo miri test[测试]
+#++++++++++++++++++++++++++|+|+++++++++++++++++++++++++++++++++++++++++|
+#cargo install cargo-audit |安全测试 cargo audit
+#+++++++++++++|+++++++++++++++++++++++|+++++++
+# cargo clean | cargo clean -p {name} |缓存清理
+#++++++++++++++++++++++++++|++++++++++++++++++++++++
+

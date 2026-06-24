@@ -1,0 +1,18 @@
+[package]
+name = "View"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+comfy-table = "*"#:Shll界面>
+anyhow = "*"#:Resultj兼容处理>
+opener = "*"#:默认开启>
+itertools = "*"#:迭代器>
+bytes = "*"#:编码>
+clap = { version = "*", features = ["derive", "deprecated", "env", "wrap_help", "string"] }#:Shll命令解析>
+indicatif = { version = "*", features = ["rayon","improved_unicode"] }#:阶段显示>
+dialoguer = { version = "*", features = ["fuzzy-matcher", "fuzzy-select", "history", "completion"] }#:shell>
+fast_log = "*"#:log(B)>
+ftlog = "*"#log(C)>

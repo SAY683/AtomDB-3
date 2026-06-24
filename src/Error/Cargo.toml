@@ -1,0 +1,21 @@
+[package]
+name = "Error"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "*"#:Result兼容处理>
+thiserror = "*"#:错误指定>
+tokio = { version = "*", features = ["full"] }#:全域执行async/await>
+data-encoding = "*"#:数据编码>
+reqwest = { version = "*", features = ["json", "socks", "stream", "blocking"] }#:http处理[单线程阻塞]>
+stretto = { version = "*", features = ["full"] }#:缓存>
+cacache = { version = "*", features = ["tokio-stream", "async-std", "link_to", "mmap"] }#:磁盘>
+sea-orm = { version = "*", features = ["runtime-tokio", "uuid", "macros", "postgres-array"] }#:ORM>
+sqlx = { version = "*", features = ["all-databases", "all-types", "runtime-actix", "macros"] }#:sqlx>
+deadpool-redis = { version = "*", features = ["serde"] }#:Redis链接>
+rbdc = "*"#:ORM(B)Mysql>
+redis = { version = "*", features = ["tokio"] }#:Redis链接通用>
+fast_log = "*"#:log(B)>

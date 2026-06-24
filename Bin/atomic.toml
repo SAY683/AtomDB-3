@@ -1,0 +1,13 @@
+#本机网页服务端口
+port = "127.0.0.1:8964"
+#显示
+view = true
+#通用apl设置（规定在bin目录下）
+apl = "Atom.xml"
+#网页路径
+path = "/atomic"
+#path = "/"
+#自动默认
+auto = true
+#服务缓存时间 如果==0则长期存储
+time = 60
