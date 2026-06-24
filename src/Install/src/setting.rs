@@ -1,5 +1,4 @@
-use crate::setting::{database_config::DATABASE_BUILD_DIR};
-use crate::setting::database_config::{SERVICE_BUILD_DIR};
+use crate::setting::database_config::{DATABASE_BUILD_DIR, SERVICE_BUILD_DIR, FILE_NODE_BUILD_DIR, FILE_SYMLINK_BUILD_DIR, API_KEYS_BUILD_DIR};
 
 ///# 查询数据库
 const INQUIRE_BUILD_DIR_SERVER: &str = r#"
@@ -11,11 +10,20 @@ select tablename from pg_tables where tablename='database'"#;
 // from pg_type
 // where typname = 'modes'"#;
 
+const INQUIRE_BUILD_DIR_FILE_NODE: &str = r#"
+select tablename from pg_tables where tablename='file_node'"#;
+const INQUIRE_BUILD_DIR_SYMLINK: &str = r#"
+select tablename from pg_tables where tablename='file_symlink'"#;
+const INQUIRE_BUILD_DIR_API_KEYS: &str = r#"
+select tablename from pg_tables where tablename='api_keys'"#;
+
 ///# 初始数据库必修
-pub const JUDGEMENT: [(&str, &str); 2] = [
-    // (INQUIRE_BUILD_DIR_TYPER, TYPE_EME),
+pub const JUDGEMENT: [(&str, &str); 5] = [
     (INQUIRE_BUILD_DIR_DATABASE, DATABASE_BUILD_DIR),
     (INQUIRE_BUILD_DIR_SERVER, SERVICE_BUILD_DIR),
+    (INQUIRE_BUILD_DIR_FILE_NODE, FILE_NODE_BUILD_DIR),
+    (INQUIRE_BUILD_DIR_SYMLINK, FILE_SYMLINK_BUILD_DIR),
+    (INQUIRE_BUILD_DIR_API_KEYS, API_KEYS_BUILD_DIR),
 ];
 
 pub mod database_config {
@@ -81,13 +89,66 @@ pub mod database_config {
 
     crud!(Service{});
 
-    ///# 创建结构
-    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-    pub struct Test {
+    ///# 虚拟文件系统: 文件节点表
+    pub const FILE_NODE_BUILD_DIR: &str = r#"
+    create table file_node (
+        uuid text not null constraint file_node_pk primary key,
+        parent_uuid text references file_node(uuid) on delete cascade,
+        name text not null,
+        is_dir boolean not null default false,
+        content_hash text,
+        file_size bigint default 0,
+        created_at timestamp default now(),
+        updated_at timestamp default now(),
+        constraint file_node_unique_name unique (parent_uuid, name)
+    );"#;
+
+    ///# 虚拟文件系统: 拟态链接表
+    pub const FILE_SYMLINK_BUILD_DIR: &str = r#"
+    create table file_symlink (
+        uuid text not null constraint file_symlink_pk primary key
+            references file_node(uuid) on delete cascade,
+        target_uuid text not null
+            references file_node(uuid) on delete cascade
+    );"#;
+
+    ///# API 密钥表
+    pub const API_KEYS_BUILD_DIR: &str = r#"
+    create table api_keys (
+        key text not null constraint api_keys_pk primary key,
+        permission text not null default 'read',
+        label text,
+        created_at timestamp default now()
+    );"#;
+
+    // ============ VFS 模型 ============
+
+    #[derive(Clone, Debug, Serialize, Deserialize, Default)]
+    pub struct FileNode {
+        pub uuid: String,
+        pub parent_uuid: Option<String>,
         pub name: String,
-        pub tels: String,
+        pub is_dir: bool,
+        pub content_hash: Option<String>,
+        pub file_size: i64,
+        pub created_at: String,
     }
-    crud!(Test{});
+    crud!(FileNode{});
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct FileSymlink {
+        pub uuid: String,
+        pub target_uuid: String,
+    }
+    crud!(FileSymlink{});
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct ApiKey {
+        pub key: String,
+        pub permission: String,
+        pub label: Option<String>,
+    }
+    crud!(ApiKey{});
 }
 
 pub mod local_config {

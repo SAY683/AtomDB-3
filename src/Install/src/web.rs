@@ -1,23 +1,22 @@
-use std::ops::Deref;
 use actix_cors::Cors;
-use actix_web::{App, HttpResponse, HttpServer, Responder, web};
+use actix_web::{App, HttpResponse, HttpServer, Responder, web, middleware::Logger};
 use actix_web::dev::Server;
 use actix_web::http::header;
 use bevy_reflect::Reflect;
 use once_cell::sync::OnceCell;
-use rayon::prelude::*;
 use rbatis::RBatis;
-use redis::Commands;
+use sea_orm::ConnectionTrait;
 use serde::Serialize;
 use uuid::Uuid;
 use Static::{Alexia, Events, LOCAL_DB};
+use crate::api_v2;
 use Static::alex::Overmaster;
 use Static::base::FutureEx;
 use Error::ThreadEvents;
 use crate::io::{Disk, KVStore};
 use crate::setting::database_config::{Database, Service};
 use crate::setting::local_config::{SUPER_DLR_URL, SUPER_URL};
-use crate::sql_url::OrmEX;
+use crate::sql_url::{OrmEX, Url};
 
 ///# 全局数据库连接池（单例，应用生命周期内复用）
 static GLOBAL_DB: OnceCell<RBatis> = OnceCell::new();
@@ -34,7 +33,50 @@ async fn get_global_db() -> Events<&'static RBatis> {
     }
 }
 
-///# JSON 统一响应封装
+///# Sea-ORM 连接池（用于处理中文文本查询，绕过 rbatis 的参数绑定问题）
+static SQL_POOL: OnceCell<sea_orm::DatabaseConnection> = OnceCell::new();
+
+async fn get_sql_pool() -> Events<&'static sea_orm::DatabaseConnection> {
+    match SQL_POOL.get() {
+        Some(pool) => Ok(pool),
+        None => {
+            let url = SUPER_URL.load().postgres.build_url();
+            let pool = sea_orm::Database::connect(&url).await
+                .map_err(|e| ThreadEvents::UnknownError(anyhow::anyhow!("SeaORM 连接失败: {}", e)))?;
+            SQL_POOL.set(pool)
+                .map_err(|_| ThreadEvents::UnknownError(anyhow::anyhow!("SQL 池已初始化")))?;
+            Ok(SQL_POOL.get().unwrap())
+        }
+    }
+}
+
+///# 使用 Sea-ORM 执行文本查询（绕过 rbatis 中文参数绑定问题）
+async fn query_text<T, F>(sql: &str, params: Vec<sea_orm::Value>, mapper: F) -> Events<Vec<T>>
+where
+    F: Fn(&sea_orm::QueryResult) -> Result<T, ThreadEvents>,
+{
+    let pool = get_sql_pool().await?;
+    let stmt = sea_orm::Statement::from_sql_and_values(
+        sea_orm::DbBackend::Postgres, sql, params,
+    );
+    let results = pool.query_all(stmt).await
+        .map_err(|e| ThreadEvents::UnknownError(anyhow::anyhow!("查询失败: {}", e)))?;
+    results.iter().map(|r| mapper(r)).collect()
+}
+
+// ======================== 请求日志 ========================
+
+use std::time::Instant;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// 生成请求ID并记录日志
+fn log_request(method: &str, path: &str, status: u16, duration_ms: u64, req_id: u64) {
+    eprintln!("#{} [AtomDB] {} {} → {} ({}ms)", req_id, method, path, status, duration_ms);
+}
+
+// ======================== JSON 统一响应封装 ========================
 fn json_ok<T: Serialize>(data: T) -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({"success": true, "data": data}))
 }
@@ -81,8 +123,11 @@ pub async fn web() -> Events<Server> {
             .max_age(3600);
 
         App::new()
+            .wrap(Logger::new("%r %s %Dms"))
             .wrap(cors)
             .app_data(web::PayloadConfig::new(max_payload))
+            // V2 API 路由（虚拟文件系统 + 认证）
+            .configure(api_v2::configure)
             // 页面路由
             .route("/", web::get().to(dashboard))
             .route(SUPER_DLR_URL.load().path.as_str(), web::get().to(dashboard))
@@ -163,7 +208,7 @@ async fn api_list_databases() -> impl Responder {
     // 尝试从 Redis 批量读取缓存（使用 MGET 减少 RTT）
     let redis_data: std::collections::HashMap<String, serde_json::Value> = {
         let mut map = std::collections::HashMap::new();
-        if let Ok(client) = SUPER_URL.deref().load().redis.redis_connection_async().await {
+        if let Ok(client) = SUPER_URL.load().redis.redis_connection_async().await {
             if let Ok(mut conn) = client.get_connection() {
                 let keys: Vec<&str> = databases.iter().map(|d| d.uuid.as_str()).collect();
                 if !keys.is_empty() {
@@ -273,28 +318,27 @@ async fn download(filename: web::Path<String>) -> impl Responder {
 }
 
 async fn download_file(filename: &str) -> Events<Vec<u8>> {
-    let rb = get_global_db().await?;
-    let conn = rb.acquire().await?;
+    // 使用 Sea-ORM 查询（正确支持中文参数绑定）
+    let rows = query_text(
+        "SELECT uuid FROM database WHERE name = $1",
+        vec![sea_orm::Value::String(Some(Box::new(filename.to_owned())))],
+        |r| r.try_get::<String>("", "uuid").map_err(|e|
+            ThreadEvents::UnknownError(anyhow::anyhow!("列读取失败: {}", e)))
+    ).await?;
 
-    // 拉取所有记录，在 Rust 侧进行名称匹配
-    // 注: 不传 WHERE 条件是因为 rbatis 4.9 + rbdc-pg 在参数化查询中
-    // 对中文 String 的 WHERE 绑定存在兼容问题，改用全量拉取+Rust匹配绕过
-    let all_records = Database::select_by_map(&conn, rbs::value!{}).await
-        .map_err(|e| ThreadEvents::UnknownError(anyhow::anyhow!("查询失败: {}", e)))?;
-    drop(conn);
-
-    // 精确名称匹配（Rust 侧 String 比较）
-    let matched = all_records.iter().find(|r| r.name == filename);
-
-    let uuid = match matched {
-        Some(r) => r.uuid.clone(),
+    let uuid = match rows.into_iter().next() {
+        Some(u) => u,
         None => {
-            let names: Vec<&str> = all_records.iter().map(|r| r.name.as_str()).collect();
-            eprintln!("[AtomDB] 下载失败: \"{}\" 未匹配, 现有名称: {:?}", filename, names);
-            return Err(ThreadEvents::UnknownError(anyhow::anyhow!(
-                "文件 \"{}\" 未找到。共 {} 条记录, 名称: {:?}",
-                filename, all_records.len(), names
-            )));
+            // 降级: 全量拉取在 Rust 侧匹配（兼容旧数据）
+            let rb = get_global_db().await?;
+            let conn = rb.acquire().await?;
+            let all = Database::select_by_map(&conn, rbs::value!{}).await.unwrap_or_default();
+            let matched = all.iter().find(|r| r.name == filename).map(|r| r.uuid.clone());
+            match matched {
+                Some(u) => u,
+                None => return Err(ThreadEvents::UnknownError(anyhow::anyhow!(
+                    "文件 \"{}\" 未找到", filename))),
+            }
         }
     };
 

@@ -16,6 +16,7 @@ pub mod setting;
 pub mod sql_url;
 pub mod web;
 pub mod rei;
+pub mod api_v2;
 
 
 ///# 发布
