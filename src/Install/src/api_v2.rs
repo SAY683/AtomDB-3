@@ -379,7 +379,7 @@ async fn api_download_file(req: HttpRequest, path: web::Path<String>) -> impl Re
     match data {
         Ok(data) => HttpResponse::Ok()
             .insert_header((header::CONTENT_TYPE, "application/octet-stream"))
-            .insert_header((header::CONTENT_DISPOSITION, format!("attachment; filename=\"download\"; filename*=UTF-8''{}", urlenc(&node.name))))
+            .insert_header((header::CONTENT_DISPOSITION, format!("attachment; filename*=UTF-8''{}; filename=\"download\"", urlenc(&node.name))))
             .body(data),
         Err(e) => json_err(actix_web::http::StatusCode::NOT_FOUND, &format!("数据未找到: {}", e)),
     }

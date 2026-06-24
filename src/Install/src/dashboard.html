@@ -283,7 +283,8 @@ async function downloadFile(uuid) {
     const r = await fetch(`/api/v2/files/${uuid}/download`, { headers: {'X-API-Key': API_KEY} });
     if (!r.ok) { showToast('下载失败: ' + r.status, true); return; }
     const disp = r.headers.get('Content-Disposition') || '';
-    const match = disp.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/);
+    // 优先匹配 filename*=UTF-8''，降级到 filename=
+    const match = disp.match(/filename\*=(?:UTF-8'')?([^;]+)/) || disp.match(/filename=(?:UTF-8'')?["']?([^"';]+)["']?/);
     const filename = match ? decodeURIComponent(match[1].trim()) : 'download';
     const blob = await r.blob();
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);

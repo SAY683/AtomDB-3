@@ -562,7 +562,7 @@ async fn download_by_uuid(path: web::Path<String>) -> impl Responder {
     match cacache::read(cache_dir, &uuid).await {
         Ok(data) => HttpResponse::Ok()
             .insert_header((header::CONTENT_TYPE, "application/octet-stream"))
-            .insert_header((header::CONTENT_DISPOSITION, format!("attachment; filename=\"download\"; filename*=UTF-8''{}", urlenc(&uuid))))
+            .insert_header((header::CONTENT_DISPOSITION, format!("attachment; filename*=UTF-8''{}; filename=\"download\"", urlenc(&uuid))))
             .body(data),
         Err(e) => {
             eprintln!("UUID 下载失败 [{}]: {:?}", uuid, e);
