@@ -138,6 +138,9 @@
         <button onclick="refreshCurrent()">⟳ 刷新</button>
         <button class="primary file-btn" onclick="document.getElementById('fileInput').click()">＋ 上传</button>
         <button onclick="showNewDirModal()">📁 新建目录</button>
+        <button onclick="showMoveCopyModal('move')" id="moveBtn" style="display:none">↗ 移动</button>
+        <button onclick="showMoveCopyModal('copy')" id="copyBtn" style="display:none">📋 复制</button>
+        <span id="selInfo" style="font-size:12px;color:var(--muted);display:none"></span>
         <input type="file" id="fileInput" multiple onchange="uploadFiles(this.files)">
       </div>
       <div class="upload-zone" id="uploadZone">📁 拖拽文件/文件夹到此处上传</div>
@@ -180,6 +183,7 @@
 let API_KEY = '';
 let currentUuid = null;
 let treeData = {};
+let selectedUuids = new Set();
 
 // 启动时自动获取 API 密钥（从服务器 internal 端点）
 async function init() {
@@ -264,7 +268,9 @@ function renderFileList(resp) {
   items.forEach(item => {
     const icon = item.is_dir ? '📁' : (item.symlink ? '🔗' : '📄');
     const size = item.file_size ? ((item.file_size / 1024).toFixed(1) + ' KB') : '';
-    el.innerHTML += `<div class="file-row">
+    const isSelected = selectedUuids.has(item.uuid);
+  el.innerHTML += `<div class="file-row">
+      <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleSel('${item.uuid}')" style="cursor:pointer">
       <span>${icon}</span>
       <span class="name" onclick="${item.is_dir ? `navigateTo('${item.uuid}')` : `downloadFile('${item.uuid}')`}">${esc(item.name)}</span>
       <span class="meta">${size}</span>
@@ -383,6 +389,40 @@ function confirmDelete(uuid, name) {
 function refreshCurrent() { navigateTo(currentUuid); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+// ---- 多选 / 批量操作 ----
+function toggleSel(uuid) {
+  if (selectedUuids.has(uuid)) selectedUuids.delete(uuid); else selectedUuids.add(uuid);
+  updateSelUI();
+}
+function updateSelUI() {
+  const n = selectedUuids.size;
+  document.getElementById('selInfo').style.display = n ? '' : 'none';
+  document.getElementById('selInfo').textContent = `已选 ${n} 项`;
+  document.getElementById('moveBtn').style.display = n ? '' : 'none';
+  document.getElementById('copyBtn').style.display = n ? '' : 'none';
+  if (currentUuid) document.getElementById('moveBtn').style.display = 'none';
+}
+async function showMoveCopyModal(action) {
+  if (!selectedUuids.size) return;
+  const actName = action === 'move' ? '移动' : '复制';
+  const dirs = [].concat(
+    Object.values(treeData).filter(i => i.is_dir),
+    {uuid: null, name: '/ (根目录)', is_dir: true}
+  );
+  let opts = dirs.map(d => `<option value="${d.uuid || ''}">${d.name}</option>`).join('');
+  const target = prompt(`选择目标目录 (输入 UUID 或留空=根目录):\n\n可用目录:\n${dirs.map(d => `  ${d.uuid || '(根)'} → ${d.name}`).join('\n')}`);
+  if (target === null) return;
+  const targetUuid = target.trim() || null;
+  const uuids = Array.from(selectedUuids);
+  const endpoint = action === 'move' ? '/api/v2/files/batch/move' : '/api/v2/files/batch/copy';
+  const j = await apiFetch('POST', endpoint, JSON.stringify({uuids, target_parent: targetUuid || ''}));
+  if (j.success) {
+    showToast(`✅ ${actName}完成: ${j.data?.[action === 'move' ? 'moved' : 'copied']?.length || '?'} 项`);
+    selectedUuids.clear(); updateSelUI();
+    refreshCurrent(); refreshTree();
+  } else showToast(`❌ ${actName}失败: ${j.error}`, true);
+}
 function showToast(msg, isError) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.style.borderColor = isError ? 'var(--red)' : 'var(--green)';

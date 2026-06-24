@@ -118,6 +118,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/files/upload", web::post().to(api_upload_file))
             .route("/files/{uuid}", web::put().to(api_update_node))
             .route("/files/{uuid}/content", web::put().to(api_overwrite_file))
+            .route("/files/{uuid}/move", web::post().to(api_move_node))
+            .route("/files/{uuid}/copy", web::post().to(api_copy_node))
+            .route("/files/batch/move", web::post().to(api_batch_move))
+            .route("/files/batch/copy", web::post().to(api_batch_copy))
             .route("/files/{uuid}", web::delete().to(api_delete_node))
             .route("/files/symlink", web::post().to(api_create_symlink))
             // 管理
@@ -488,6 +492,136 @@ async fn api_overwrite_file(req: HttpRequest, path: web::Path<String>, body: web
         Ok(_) => json_ok(serde_json::json!({"uuid": uuid, "size": size, "hash": integrity.to_string()})),
         Err(e) => json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("更新失败: {}", e)),
     }
+}
+
+// ======================== 移动节点 ========================
+
+#[derive(serde::Deserialize)]
+struct MoveNodeReq { parent_uuid: String, name: Option<String> }
+
+async fn api_move_node(req: HttpRequest, path: web::Path<String>, body: web::Json<MoveNodeReq>) -> impl Responder {
+    let perm = match check_auth(&req) { Ok(p) => p, Err(e) => return e };
+    if let Err(e) = require_write(&perm) { return e; }
+    let uuid = path.into_inner();
+    let rb = match get_vfs_db().await { Ok(rb) => rb, Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 错误: {}", e)) };
+    let conn = match rb.acquire().await { Ok(c) => c, Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("连接失败: {}", e)) };
+    let new_name = body.name.as_deref().unwrap_or(&uuid);
+    let parent_val = if body.parent_uuid.is_empty() { rbs::Value::Null } else { rbs::Value::String(body.parent_uuid.clone()) };
+    match conn.exec(
+        "UPDATE file_node SET parent_uuid = $1, name = COALESCE($2, name), updated_at = NOW() WHERE uuid = $3",
+        vec![parent_val, rbs::Value::String(new_name.to_string()), rbs::Value::String(uuid.clone())],
+    ).await {
+        Ok(r) if r.rows_affected > 0 => json_ok(serde_json::json!({"moved": uuid, "to": body.parent_uuid})),
+        Ok(_) => json_err(actix_web::http::StatusCode::NOT_FOUND, "节点未找到"),
+        Err(e) => json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("移动失败: {}", e)),
+    }
+}
+
+// ======================== 复制节点 ========================
+
+#[derive(serde::Deserialize)]
+struct CopyNodeReq { parent_uuid: String, name: Option<String> }
+
+async fn api_copy_node(req: HttpRequest, path: web::Path<String>, body: web::Json<CopyNodeReq>) -> impl Responder {
+    let perm = match check_auth(&req) { Ok(p) => p, Err(e) => return e };
+    if let Err(e) = require_write(&perm) { return e; }
+    let uuid = path.into_inner();
+    let rb = match get_vfs_db().await { Ok(rb) => rb, Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 错误: {}", e)) };
+    let conn = match rb.acquire().await { Ok(c) => c, Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("连接失败: {}", e)) };
+    // 查询源节点
+    let src = match FileNode::select_by_map(&conn, rbs::value!{"uuid": &uuid}).await {
+        Ok(n) => n.into_iter().next(),
+        Err(e) => return json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("查询失败: {}", e)),
+    };
+    let src = match src { Some(s) => s, None => return json_err(actix_web::http::StatusCode::NOT_FOUND, "源节点未找到") };
+    let new_uuid = Uuid::new_v4().to_string();
+    let new_name = body.name.clone().unwrap_or_else(|| format!("{} (副本)", src.name));
+    // 复制 cacache 内容（如文件有内容）
+    if !src.is_dir {
+        let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+        if let Ok(data) = cacache::read(cache_dir, &uuid).await {
+            let _ = cacache::write(cache_dir, &new_uuid, &data).await;
+        }
+    }
+    // 创建新节点
+    let parent_uuid = if body.parent_uuid.is_empty() { None } else { Some(body.parent_uuid.clone()) };
+    let new_node = FileNode {
+        uuid: new_uuid.clone(),
+        parent_uuid,
+        name: new_name,
+        is_dir: src.is_dir,
+        content_hash: src.content_hash,
+        file_size: src.file_size,
+    };
+    match FileNode::insert(&conn, &new_node).await {
+        Ok(_) => json_ok(serde_json::json!({"uuid": new_uuid, "copied_from": uuid, "parent": body.parent_uuid})),
+        Err(e) => json_err(actix_web::http::StatusCode::CONFLICT, &format!("复制失败: {}", e)),
+    }
+}
+
+// ======================== 批量移动 ========================
+
+#[derive(serde::Deserialize)]
+struct BatchMoveReq { uuids: Vec<String>, target_parent: String }
+
+async fn api_batch_move(req: HttpRequest, body: web::Json<BatchMoveReq>) -> impl Responder {
+    let perm = match check_auth(&req) { Ok(p) => p, Err(e) => return e };
+    if let Err(e) = require_write(&perm) { return e; }
+    let rb = match get_vfs_db().await { Ok(rb) => rb, Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 错误: {}", e)) };
+    let conn = match rb.acquire().await { Ok(c) => c, Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("连接失败: {}", e)) };
+    let mut moved = Vec::new();
+    let parent_val = if body.target_parent.is_empty() { rbs::Value::Null } else { rbs::Value::String(body.target_parent.clone()) };
+    for uid in &body.uuids {
+        match conn.exec(
+            "UPDATE file_node SET parent_uuid = $1, updated_at = NOW() WHERE uuid = $2",
+            vec![parent_val.clone(), rbs::Value::String(uid.clone())],
+        ).await {
+            Ok(r) if r.rows_affected > 0 => moved.push(uid.clone()),
+            _ => eprintln!("[AtomDB] 批量移动失败: {}", uid),
+        }
+    }
+    json_ok(serde_json::json!({"moved": moved, "target": body.target_parent}))
+}
+
+// ======================== 批量复制 ========================
+
+#[derive(serde::Deserialize)]
+struct BatchCopyReq { uuids: Vec<String>, target_parent: String }
+
+async fn api_batch_copy(req: HttpRequest, body: web::Json<BatchCopyReq>) -> impl Responder {
+    let perm = match check_auth(&req) { Ok(p) => p, Err(e) => return e };
+    if let Err(e) = require_write(&perm) { return e; }
+    let rb = match get_vfs_db().await { Ok(rb) => rb, Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 错误: {}", e)) };
+    let conn = match rb.acquire().await { Ok(c) => c, Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("连接失败: {}", e)) };
+    let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+    let parent_val: Option<String> = if body.target_parent.is_empty() { None } else { Some(body.target_parent.clone()) };
+    let mut copied = Vec::new();
+    for uid in &body.uuids {
+        let src = match FileNode::select_by_map(&conn, rbs::value!{"uuid": uid}).await {
+            Ok(n) => n.into_iter().next(),
+            Err(_) => continue,
+        };
+        if let Some(src) = src {
+            let new_uuid = Uuid::new_v4().to_string();
+            if !src.is_dir {
+                if let Ok(data) = cacache::read(cache_dir, uid).await {
+                    let _ = cacache::write(cache_dir, &new_uuid, &data).await;
+                }
+            }
+            let node = FileNode {
+                uuid: new_uuid.clone(),
+                parent_uuid: parent_val.clone(),
+                name: format!("{} (副本)", src.name),
+                is_dir: src.is_dir,
+                content_hash: src.content_hash,
+                file_size: src.file_size,
+            };
+            if FileNode::insert(&conn, &node).await.is_ok() {
+                copied.push(new_uuid);
+            }
+        }
+    }
+    json_ok(serde_json::json!({"copied": copied, "target": body.target_parent}))
 }
 
 // ======================== 删除节点 ========================
