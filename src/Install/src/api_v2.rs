@@ -111,20 +111,20 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             // 认证
             .route("/auth/login", web::post().to(api_login))
             .route("/auth/token", web::get().to(api_get_token))
-            // 文件操作
+            // 文件操作（注意: 批量路由必须排在 {uuid} 参数路由之前，避免冲突）
             .route("/files", web::get().to(api_list_root))
+            .route("/files/upload", web::post().to(api_upload_file))
+            .route("/files/symlink", web::post().to(api_create_symlink))
+            .route("/files/batch/move", web::post().to(api_batch_move))
+            .route("/files/batch/copy", web::post().to(api_batch_copy))
+            .route("/files/batch/delete", web::post().to(api_batch_delete))
             .route("/files/{uuid}", web::get().to(api_get_node))
             .route("/files/{uuid}/download", web::get().to(api_download_file))
-            .route("/files/upload", web::post().to(api_upload_file))
             .route("/files/{uuid}", web::put().to(api_update_node))
             .route("/files/{uuid}/content", web::put().to(api_overwrite_file))
             .route("/files/{uuid}/move", web::post().to(api_move_node))
             .route("/files/{uuid}/copy", web::post().to(api_copy_node))
-            .route("/files/batch/move", web::post().to(api_batch_move))
-            .route("/files/batch/copy", web::post().to(api_batch_copy))
-            .route("/files/batch/delete", web::post().to(api_batch_delete))
             .route("/files/{uuid}", web::delete().to(api_delete_node))
-            .route("/files/symlink", web::post().to(api_create_symlink))
             // 管理
             .route("/admin/keys", web::post().to(api_create_key))
             .route("/admin/keys/{key}", web::delete().to(api_delete_key))
