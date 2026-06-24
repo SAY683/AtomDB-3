@@ -14,41 +14,6 @@
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
   .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
 
-  /* Login */
-  .login-overlay {
-    position: fixed; inset: 0; background: var(--bg);
-    display: flex; justify-content: center; align-items: center; z-index: 9999;
-  }
-  .login-box {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 12px; padding: 40px; width: 380px; max-width: 90%;
-  }
-  .login-box h1 { text-align: center; margin-bottom: 24px; }
-  .login-box h1 span { color: var(--accent); }
-  .login-box input {
-    width: 100%; padding: 12px 16px; margin-bottom: 12px;
-    background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; color: var(--text); font-size: 14px;
-  }
-  .login-box input:focus { outline: none; border-color: var(--accent); }
-  .login-box .perm-select {
-    display: flex; gap: 8px; margin-bottom: 16px;
-  }
-  .login-box .perm-select button {
-    flex: 1; padding: 8px; border: 1px solid var(--border);
-    background: var(--bg); color: var(--muted); border-radius: 6px;
-    cursor: pointer; font-size: 13px;
-  }
-  .login-box .perm-select button.active {
-    border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.08);
-  }
-  .login-box button.primary {
-    width: 100%; padding: 12px; border: none; border-radius: 6px;
-    background: var(--accent); color: #fff; font-size: 15px; cursor: pointer;
-  }
-  .login-error { color: var(--red); font-size: 13px; text-align: center; margin-top: 8px; display: none; }
-
-  /* Header */
   header {
     display: flex; justify-content: space-between; align-items: center;
     padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 20px;
@@ -56,13 +21,8 @@
   }
   header h1 { font-size: 20px; }
   header h1 span { color: var(--accent); }
-  .user-info { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
-  .user-info button {
-    padding: 4px 12px; border: 1px solid var(--border); border-radius: 4px;
-    background: var(--card); color: var(--text); cursor: pointer; font-size: 12px;
-  }
+  .api-info { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 12px; }
 
-  /* Main layout */
   .main-layout { display: flex; gap: 16px; min-height: 70vh; }
   .sidebar {
     width: 280px; min-width: 200px; background: var(--card);
@@ -72,8 +32,7 @@
   .sidebar .title { font-size: 12px; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
   .tree-item {
     padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px;
-    display: flex; align-items: center; gap: 6px;
-    transition: background 0.15s;
+    display: flex; align-items: center; gap: 6px; transition: background 0.15s;
   }
   .tree-item:hover { background: rgba(88,166,255,0.08); }
   .tree-item.active { background: rgba(88,166,255,0.15); color: var(--accent); }
@@ -83,17 +42,12 @@
     flex: 1; background: var(--card); border: 1px solid var(--border);
     border-radius: 8px; padding: 16px; min-width: 0;
   }
-  .content .empty-state {
-    text-align: center; padding: 60px 20px; color: var(--muted);
-  }
+  .content .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
   .content .empty-state .big-icon { font-size: 48px; margin-bottom: 12px; }
 
-  /* File list */
-  .file-list { width: 100%; }
   .file-row {
     display: flex; align-items: center; padding: 10px 12px;
-    border-bottom: 1px solid var(--border); transition: background 0.15s;
-    gap: 12px;
+    border-bottom: 1px solid var(--border); transition: background 0.15s; gap: 12px;
   }
   .file-row:hover { background: rgba(88,166,255,0.04); }
   .file-row .name { flex: 1; font-size: 14px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -107,17 +61,20 @@
   .file-row .actions button:hover { color: var(--accent); background: rgba(88,166,255,0.08); }
   .file-row .actions button.danger:hover { color: var(--red); background: rgba(248,81,73,0.1); }
 
-  /* Toolbar */
-  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
   .toolbar button, .toolbar .file-btn {
     padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px;
     background: var(--card); color: var(--text); cursor: pointer; font-size: 13px;
   }
   .toolbar button:hover { border-color: var(--accent); }
   .toolbar button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .toolbar input[type="file"] { display: none; }
+  .toolbar .apikey-input {
+    flex: 1; min-width: 200px; padding: 6px 12px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--text); font-size: 12px; font-family: monospace;
+  }
+  .toolbar .apikey-input:focus { outline: none; border-color: var(--accent); }
+  input[type="file"] { display: none; }
 
-  /* Upload zone */
   .upload-zone {
     border: 2px dashed var(--border); border-radius: 8px;
     padding: 20px; text-align: center; margin-bottom: 12px; cursor: pointer;
@@ -127,7 +84,6 @@
   .progress-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; display: none; }
   .progress-bar .fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
 
-  /* Modal */
   .modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
     z-index: 1000; justify-content: center; align-items: center;
@@ -156,31 +112,20 @@
 </style>
 </head>
 <body>
-<!-- Login -->
-<div class="login-overlay" id="loginOverlay">
-  <div class="login-box">
-    <h1><span>Atom</span>DB</h1>
-    <p style="color:var(--muted);text-align:center;font-size:13px;margin-bottom:20px">虚拟文件系统管理面板</p>
-    <input type="password" id="passwordInput" placeholder="管理员密码" onkeydown="if(event.key==='Enter')doLogin()">
-    <div class="perm-select">
-      <button id="permRead" class="active" onclick="selectPerm('read')">🔍 仅读</button>
-      <button id="permWrite" onclick="selectPerm('write')">✏️ 读写</button>
-    </div>
-    <button class="primary" onclick="doLogin()">登录</button>
-    <div class="login-error" id="loginError">密码错误</div>
-  </div>
-</div>
-
-<!-- App -->
-<div id="app" style="display:none">
 <div class="container">
   <header>
     <h1><span>Atom</span>DB 文件系统</h1>
-    <div class="user-info">
-      <span id="permBadge">🔍 仅读</span>
-      <button onclick="doLogout()">退出</button>
+    <div class="api-info">
+      <span>🔓 本地管理面板</span>
+      <span id="permBadge" style="color:var(--green)">✏️ 读写</span>
     </div>
   </header>
+
+  <div class="toolbar" style="margin-bottom:4px">
+    <span style="font-size:12px;color:var(--muted)">🔑 API 密钥:</span>
+    <input class="apikey-input" id="apiKeyInput" placeholder="加载中…" readonly>
+    <button style="font-size:11px;padding:4px 10px" onclick="copyApiKey()">复制</button>
+  </div>
 
   <div class="main-layout">
     <div class="sidebar" id="sidebar">
@@ -191,16 +136,15 @@
     <div class="content">
       <div class="toolbar">
         <button onclick="refreshCurrent()">⟳ 刷新</button>
-        <button class="primary file-btn" id="uploadBtn" onclick="document.getElementById('fileInput').click()">＋ 上传</button>
+        <button class="primary file-btn" onclick="document.getElementById('fileInput').click()">＋ 上传</button>
         <button onclick="showNewDirModal()">📁 新建目录</button>
         <input type="file" id="fileInput" multiple onchange="uploadFiles(this.files)">
       </div>
-      <div class="upload-zone" id="uploadZone">📁 拖拽文件到此处上传</div>
+      <div class="upload-zone" id="uploadZone">📁 拖拽文件/文件夹到此处上传</div>
       <div class="progress-bar" id="progressBar"><div class="fill" id="progressFill"></div></div>
-      <div id="fileList"><div class="empty-state"><div class="big-icon">📂</div><p>选择一个目录或上传文件</p></div></div>
+      <div id="fileList"><div class="empty-state"><div class="big-icon">📂</div><p>加载中…</p></div></div>
     </div>
   </div>
-</div>
 </div>
 
 <!-- New Dir Modal -->
@@ -233,37 +177,39 @@
 <div class="toast" id="toast"></div>
 
 <script>
-let API = '';
-let PERM = 'read';
-let TOKEN = '';
+let API_KEY = '';
 let currentUuid = null;
 let treeData = {};
 
-function selectPerm(p) { PERM = p; document.querySelectorAll('.perm-select button').forEach(b => b.classList.toggle('active', b.id === 'permRead' === (p==='read'))); }
-
-async function doLogin() {
-  const pw = document.getElementById('passwordInput').value;
-  if (!pw) return;
+// 启动时自动获取 API 密钥（从服务器 internal 端点）
+async function init() {
   try {
-    const r = await fetch('/api/v2/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pw}) });
+    const r = await fetch('/api/v2/auth/token');
     const j = await r.json();
-    if (!j.success) { showLoginError(j.error); return; }
-    TOKEN = pw;
-    API = `X-API-Key: ${pw}:${PERM}`;
-    document.getElementById('loginOverlay').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    document.getElementById('permBadge').textContent = PERM === 'read' ? '🔍 仅读' : '✏️ 读写';
-    if (PERM === 'read') document.getElementById('uploadBtn').style.display = 'none';
-    refreshTree();
-    navigateTo(null);
-  } catch(e) { showLoginError(e.message); }
+    if (j.success && j.data && j.data.token_write) {
+      API_KEY = j.data.token_write;
+      document.getElementById('apiKeyInput').value = API_KEY;
+      document.getElementById('apiKeyInput').title = 'X-API-Key: ' + API_KEY;
+    } else {
+      // 降级: 尝试用空密码（开发模式）
+      API_KEY = 'admin:write';
+      document.getElementById('apiKeyInput').value = API_KEY;
+    }
+  } catch(e) {
+    API_KEY = 'admin:write';
+    document.getElementById('apiKeyInput').value = API_KEY;
+  }
+  refreshTree();
+  navigateTo(null);
+}
+init();
+
+function copyApiKey() {
+  navigator.clipboard.writeText(API_KEY).then(() => showToast('✅ API 密钥已复制')).catch(() => {});
 }
 
-function showLoginError(msg) { const el = document.getElementById('loginError'); el.textContent = msg; el.style.display = 'block'; }
-function doLogout() { TOKEN = ''; API = ''; document.getElementById('app').style.display = 'none'; document.getElementById('loginOverlay').style.display = 'flex'; document.getElementById('passwordInput').value = ''; }
-
 async function apiFetch(method, path, body) {
-  const headers = {'X-API-Key': `${TOKEN}:${PERM}`};
+  const headers = {'X-API-Key': API_KEY};
   if (body && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
   const r = await fetch(path, { method, headers, body });
   return r.json();
@@ -271,7 +217,7 @@ async function apiFetch(method, path, body) {
 
 async function refreshTree() {
   const r = await apiFetch('GET', '/api/v2/files');
-  if (!r.success) return;
+  if (!r.success) { document.getElementById('treeRoot').innerHTML = '<div class="tree-item" style="color:var(--red)">⚠️ 加载失败</div>'; return; }
   treeData = {};
   for (const item of r.data || []) treeData[item.uuid] = item;
   renderTree();
@@ -288,20 +234,16 @@ function renderTree() {
 function renderTreeItem(item, depth) {
   const active = currentUuid === item.uuid ? ' active' : '';
   const icon = item.is_dir ? '📁' : '📄';
-  let html = `<div class="tree-item${active}" onclick="navigateTo('${item.uuid}')" style="padding-left:${8 + depth*16}px"><span class="icon">${icon}</span>${esc(item.name)}</div>`;
-  // 递归子节点直接从 treeData 查找
   const children = Object.values(treeData).filter(i => i.parent_uuid === item.uuid && i.is_dir);
-  children.forEach(c => html += renderTreeItem(c, depth + 1));
-  return html;
+  let childHtml = children.map(c => renderTreeItem(c, depth + 1)).join('');
+  return `<div class="tree-item${active}" onclick="navigateTo('${item.uuid}')" style="padding-left:${8 + depth*16}px"><span class="icon">${icon}</span>${esc(item.name)}</div>${childHtml}`;
 }
 
 async function navigateTo(uuid) {
   currentUuid = uuid;
-  // 高亮更新
-  document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active'));
   const r = await apiFetch('GET', '/api/v2/files' + (uuid ? '/' + uuid : ''));
   renderFileList(r);
-  renderTree(); // 刷新高亮
+  renderTree();
 }
 
 function renderFileList(resp) {
@@ -318,19 +260,16 @@ function renderFileList(resp) {
     return;
   }
   el.innerHTML = '<div class="file-list">';
-  // 排序: 目录在前
   items.sort((a,b) => (b.is_dir ? 1 : 0) - (a.is_dir ? 1 : 0));
   items.forEach(item => {
     const icon = item.is_dir ? '📁' : (item.symlink ? '🔗' : '📄');
     const size = item.file_size ? ((item.file_size / 1024).toFixed(1) + ' KB') : '';
-    const hashShort = item.content_hash ? item.content_hash.slice(0, 12) + '…' : '';
     el.innerHTML += `<div class="file-row">
-      <span class="icon">${icon}</span>
+      <span>${icon}</span>
       <span class="name" onclick="${item.is_dir ? `navigateTo('${item.uuid}')` : `downloadFile('${item.uuid}')`}">${esc(item.name)}</span>
-      <span class="meta">${size} ${hashShort}</span>
+      <span class="meta">${size}</span>
       <span class="actions">
         ${!item.is_dir ? `<button onclick="downloadFile('${item.uuid}')" title="下载">⬇</button>` : ''}
-        ${item.symlink ? `<button title="拟态链接 → ${item.target_uuid?.slice(0,8)}…">🔗</button>` : ''}
         <button onclick="showRenameModal('${item.uuid}', '${esc(item.name)}')" title="重命名">✏️</button>
         <button class="danger" onclick="confirmDelete('${item.uuid}', '${esc(item.name)}')" title="删除">🗑</button>
       </span>
@@ -340,85 +279,64 @@ function renderFileList(resp) {
 }
 
 async function downloadFile(uuid) {
-  const url = `/api/v2/files/${uuid}/download`;
   try {
-    const r = await fetch(url, { headers: {'X-API-Key': `${TOKEN}:${PERM}`} });
+    const r = await fetch(`/api/v2/files/${uuid}/download`, { headers: {'X-API-Key': API_KEY} });
     if (!r.ok) { showToast('下载失败: ' + r.status, true); return; }
-    // 从 Content-Disposition 头提取原始文件名
     const disp = r.headers.get('Content-Disposition') || '';
     const match = disp.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/);
     const filename = match ? decodeURIComponent(match[1].trim()) : 'download';
     const blob = await r.blob();
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = filename; a.click(); URL.revokeObjectURL(a.href);
-    showToast('下载完成: ' + filename);
   } catch(e) { showToast('下载失败: ' + e.message, true); }
 }
 
-// Upload (支持文件和文件夹拖拽)
+// Upload
 document.getElementById('uploadZone').addEventListener('dragover', e => { e.preventDefault(); e.currentTarget.classList.add('dragover'); });
 document.getElementById('uploadZone').addEventListener('dragleave', e => { e.currentTarget.classList.remove('dragover'); });
 document.getElementById('uploadZone').addEventListener('drop', e => {
   e.preventDefault(); e.currentTarget.classList.remove('dragover');
-  if (PERM !== 'write') { showToast('需要 write 权限', true); return; }
   const items = e.dataTransfer.items;
   if (items && items.length) {
-    // 使用 FileSystem API 处理文件夹
     for (let i = 0; i < items.length; i++) {
       const entry = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
-      if (entry) {
-        scanEntry(entry, currentUuid);
-      } else {
-        // 降级: 当作普通文件
-        if (items[i].kind === 'file') uploadFileItem(items[i].getAsFile(), currentUuid);
-      }
+      if (entry) scanEntry(entry, currentUuid);
+      else if (items[i].kind === 'file') uploadFileItem(items[i].getAsFile(), currentUuid);
     }
   } else {
-    // 降级: 用 files
     for (const f of e.dataTransfer.files) uploadFileItem(f, currentUuid);
   }
 });
 
-// 递归扫描目录条目
 async function scanEntry(entry, parentUuid) {
   if (entry.isFile) {
     entry.file(f => uploadFileItem(f, parentUuid));
   } else if (entry.isDirectory) {
-    // 创建目录节点
     const dirReader = entry.createReader();
-    const dirName = entry.name + '/';
-    let url = `/api/v2/files/upload?name=${encodeURIComponent(dirName)}`;
+    let url = `/api/v2/files/upload?name=${encodeURIComponent(entry.name + '/')}`;
     if (parentUuid) url += `&parent=${encodeURIComponent(parentUuid)}`;
     const j = await apiFetch('POST', url, '');
     let dirUuid = parentUuid;
     if (j.success && j.data && j.data.uuid) dirUuid = j.data.uuid;
-    // 读取目录内容
-    const entries = await new Promise(resolve => {
-      dirReader.readEntries(results => resolve(results));
-    });
+    const entries = await new Promise(resolve => { dirReader.readEntries(results => resolve(results)); });
     for (const child of entries) scanEntry(child, dirUuid);
   }
 }
 
 async function uploadFileItem(file, parentUuid) {
   if (!file) return;
-  const bar = document.getElementById('progressBar'); bar.style.display = 'block';
-  showToast(`上传: ${file.name} (${(file.size/1024).toFixed(1)}KB)`);
+  showToast(`上传: ${file.name}`);
   try {
     let url = `/api/v2/files/upload?name=${encodeURIComponent(file.name)}`;
     if (parentUuid) url += `&parent=${encodeURIComponent(parentUuid)}`;
     const j = await apiFetch('POST', url, file);
-    if (j.success) { showToast(`✅ ${file.name}`); } else { showToast(`❌ ${file.name}: ${j.error}`, true); }
+    if (j.success) showToast(`✅ ${file.name}`);
+    else showToast(`❌ ${file.name}: ${j.error}`, true);
   } catch(e) { showToast(`❌ ${file.name}: ${e.message}`, true); }
 }
 
 async function uploadFiles(files) {
-  if (!files || !files.length || PERM !== 'write') return;
-  const bar = document.getElementById('progressBar'); bar.style.display = 'block';
-  for (let i = 0; i < files.length; i++) {
-    await uploadFileItem(files[i], currentUuid);
-  }
-  setTimeout(() => { bar.style.display = 'none'; }, 500);
+  for (let i = 0; i < files.length; i++) await uploadFileItem(files[i], currentUuid);
   refreshCurrent(); refreshTree();
 }
 
@@ -431,7 +349,7 @@ async function submitNewDir() {
   let url = `/api/v2/files/upload?name=${encodeURIComponent(name + '/')}`;
   if (currentUuid) url += `&parent=${encodeURIComponent(currentUuid)}`;
   const j = await apiFetch('POST', url, '');
-  if (j.success) { showToast(`📁 目录已创建: ${name}`); refreshCurrent(); refreshTree(); }
+  if (j.success) { showToast(`📁 已创建`); refreshCurrent(); refreshTree(); }
   else showToast(`❌ ${j.error}`, true);
 }
 
@@ -443,7 +361,8 @@ async function submitRename() {
   if (!newName || !renameTarget) return;
   closeModal('renameModal');
   const j = await apiFetch('PUT', `/api/v2/files/${renameTarget}`, JSON.stringify({name: newName}));
-  if (j.success) { showToast('✅ 已重命名'); refreshCurrent(); refreshTree(); } else showToast(`❌ ${j.error}`, true);
+  if (j.success) { showToast('✅ 已重命名'); refreshCurrent(); refreshTree(); }
+  else showToast(`❌ ${j.error}`, true);
   renameTarget = null;
 }
 
@@ -453,7 +372,7 @@ function confirmDelete(uuid, name) {
   document.getElementById('confirmBtn').onclick = async () => {
     closeModal('confirmModal');
     const j = await apiFetch('DELETE', `/api/v2/files/${uuid}`);
-    if (j.success) { showToast(`🗑 已删除: ${name}`); refreshCurrent(); refreshTree(); }
+    if (j.success) { showToast(`🗑 已删除`); refreshCurrent(); refreshTree(); }
     else showToast(`❌ ${j.error}`, true);
   };
   document.getElementById('confirmModal').classList.add('active');
@@ -466,7 +385,7 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s || 
 function showToast(msg, isError) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.style.borderColor = isError ? 'var(--red)' : 'var(--green)';
-  t.style.display = 'block'; setTimeout(() => { t.style.display = 'none'; }, 3500);
+  t.style.display = 'block'; setTimeout(() => { t.style.display = 'none'; }, 3000);
 }
 </script>
 </body>

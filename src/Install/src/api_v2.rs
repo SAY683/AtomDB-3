@@ -110,6 +110,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         web::scope("/api/v2")
             // 认证
             .route("/auth/login", web::post().to(api_login))
+            .route("/auth/token", web::get().to(api_get_token))
             // 文件操作
             .route("/files", web::get().to(api_list_root))
             .route("/files/{uuid}", web::get().to(api_get_node))
@@ -125,7 +126,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     );
 }
 
-// ======================== 登录 ========================
+// ======================== 登录 / Token ========================
 
 #[derive(serde::Deserialize)]
 struct LoginReq { password: String }
@@ -140,6 +141,16 @@ async fn api_login(body: web::Json<LoginReq>) -> impl Responder {
     } else {
         json_err(actix_web::http::StatusCode::UNAUTHORIZED, "密码错误")
     }
+}
+
+/// 本地管理面板获取 Token（无需认证，仅供同源面板使用）
+async fn api_get_token() -> impl Responder {
+    let pw = admin_password();
+    json_ok(serde_json::json!({
+        "token_read":  format!("{}:read", pw),
+        "token_write": format!("{}:write", pw),
+        "permissions": ["read", "write"]
+    }))
 }
 
 // ======================== 文件列表（根目录） ========================
