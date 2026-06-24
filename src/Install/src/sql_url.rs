@@ -14,6 +14,7 @@ use tokio_postgres::{Client, Config, Connection, NoTls, Socket};
 use tokio_postgres::tls::NoTlsStream;
 
 use Static::Events;
+use Error::ThreadEvents;
 
 use crate::setting::local_config::SUPER_URL;
 
@@ -142,30 +143,14 @@ impl Url for RedisUlr {
     ///#产生
     ///#redis://[<username>][:<password>@][<hostname>][:port][/<db>]
     fn build_url(&self) -> String {
-        if self.name.is_some() || self.password.is_some() {
-            format!(
-                "redis://{}:{}@{}:{}/{}",
-                self.name.as_ref().unwrap().as_str(),
-                self.password.as_ref().unwrap().as_str(),
-                self.host.as_str(),
-                {
-                    if let Some(ref port) = self.port {
-                        port.as_ref()
-                    } else {
-                        "6379"
-                    }
-                },
-                self.database.as_str()
-            )
-        } else {
-            format!("redis://{}:{}", self.host.as_str(), {
-                if let Some(ref port) = self.port {
-                    port.as_ref()
-                } else {
-                    "6379"
-                }
-            })
-        }
+        let port = self.port.as_deref().unwrap_or("6379");
+        let auth = match (self.name.as_deref(), self.password.as_deref()) {
+            (Some(n), Some(p)) => format!("{}:{}@", n, p),
+            (Some(n), None) => format!("{}@", n),
+            (None, Some(p)) => format!(":{}@", p),
+            (None, None) => String::new(),
+        };
+        format!("redis://{}{}:{}/{}", auth, self.host, port, self.database)
     }
 }
 
@@ -203,11 +188,12 @@ impl PostgresUlr {
 impl PostgresUlr {
     //# 链接
     async fn connect_rab(&self) -> Events<PgConnection> {
-        let x = PgConnectOptions::new().username(self.name.as_str()).password(self.password.as_str()).port(if let Some(ref port) = self.port {
-            port.parse().unwrap()
-        } else {
-            "5432".parse().unwrap()
-        }).host(self.host.as_str()).database(self.database.as_str());
+        let port: u16 = match &self.port {
+            Some(p) => p.parse().map_err(|e| ThreadEvents::UnknownError(
+                anyhow::anyhow!("无效的 PostgreSQL 端口 '{}': {}", p, e)))?,
+            None => 5432,
+        };
+        let x = PgConnectOptions::new().username(self.name.as_str()).password(self.password.as_str()).port(port).host(self.host.as_str()).database(self.database.as_str());
         Ok(PgConnection::establish(&x).await?)
     }
     ///# 执行
@@ -219,20 +205,21 @@ impl PostgresUlr {
     }
     ///+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     ///# 链接 tio
-    pub async fn config_tok(&self) -> (Client, Connection<Socket, NoTlsStream>) {
+    pub async fn config_tok(&self) -> Events<(Client, Connection<Socket, NoTlsStream>)> {
         let mut config = Config::new();
         config.host(self.host.as_str());
         config.user(self.name.as_str());
         config.password(self.password.as_str());
         config.dbname(self.database.as_str());
-        config.port({
-            if let Some(ref port) = self.port {
-                port.parse().unwrap()
-            } else {
-                "5432".parse().unwrap()
-            }
-        });
-        config.connect(NoTls).await.unwrap()
+        let port: u16 = match &self.port {
+            Some(p) => p.parse().map_err(|e| ThreadEvents::UnknownError(
+                anyhow::anyhow!("无效的 PostgreSQL 端口 '{}': {}", p, e)))?,
+            None => 5432,
+        };
+        config.port(port);
+        Ok(config.connect(NoTls).await.map_err(|e| {
+            ThreadEvents::UnknownError(anyhow::anyhow!("PostgreSQL 连接失败: {}", e))
+        })?)
     }
 }
 

@@ -26,7 +26,7 @@ pub async fn build_redis() -> Events<()> {
             port: format!("{}/{}", i.port, xv.name),
             mode: xv.mode,
         }).unwrap();
-        if time == 0 {
+        if time > 0 {
             cmd.set_ex::<_, _, bool>(i.uuid, bir, time as u64).await.unwrap();
         } else {
             cmd.set::<_, _, bool>(i.uuid, bir).await.unwrap();

@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 use rayon::prelude::*;
 use rbatis::RBatis;
 use redis::Commands;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use uuid::Uuid;
 use Static::{Alexia, Events};
 use Static::alex::Overmaster;
@@ -159,15 +159,21 @@ async fn api_list_databases() -> impl Responder {
     };
     drop(conn);
 
-    // 尝试从 Redis 读取缓存数据（可选，失败则安静跳过）
+    // 尝试从 Redis 批量读取缓存（使用 MGET 减少 RTT）
     let redis_data: std::collections::HashMap<String, serde_json::Value> = {
         let mut map = std::collections::HashMap::new();
-        if let Ok(mut client) = SUPER_URL.deref().load().redis.redis_connection_async().await {
-            for db in &databases {
-                // redis::Client 直接支持 Commands, get() 为同步调用
-                if let Ok(val) = client.get::<_, String>(db.uuid.as_str()) {
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&val) {
-                        map.insert(db.uuid.clone(), json);
+        if let Ok(client) = SUPER_URL.deref().load().redis.redis_connection_async().await {
+            if let Ok(mut conn) = client.get_connection() {
+                let keys: Vec<&str> = databases.iter().map(|d| d.uuid.as_str()).collect();
+                if !keys.is_empty() {
+                    if let Ok(vals) = redis::cmd("MGET").arg(&keys).query::<Vec<Option<String>>>(&mut conn) {
+                        for (i, val_opt) in vals.into_iter().enumerate() {
+                            if let Some(val) = val_opt {
+                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&val) {
+                                    map.insert(databases[i].uuid.clone(), json);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -245,7 +251,12 @@ async fn api_database_detail(path: web::Path<String>) -> impl Responder {
 // ======================== 文件下载 ========================
 
 async fn download(filename: web::Path<String>) -> impl Responder {
-    let filename = filename.into_inner();
+    let raw = filename.into_inner();
+    // 防 CRLF 注入 + 路径穿越：只允许安全字符
+    let filename: String = raw.chars().filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == '.').collect();
+    if filename.is_empty() || filename != raw {
+        return json_err(actix_web::http::StatusCode::BAD_REQUEST, "文件名包含非法字符");
+    }
     match download_file(&filename).await {
         Ok(data) => HttpResponse::Ok()
             .insert_header((header::CONTENT_TYPE, "application/octet-stream"))
@@ -338,18 +349,20 @@ async fn api_update_database(path: web::Path<String>, body: web::Json<UpdateDbRe
         return json_err(actix_web::http::StatusCode::NOT_FOUND, "数据库未找到");
     }
     let current = &existing[0];
-    let updated = Database {
-        uuid: uuid.clone(),
-        name: body.name.clone().unwrap_or_else(|| current.name.clone()),
-        hash: body.hash.clone().unwrap_or_else(|| current.hash.clone()),
-        port: body.port.clone().unwrap_or_else(|| current.port.clone()),
-    };
-    // rbatis crud! 没有直接的 update_by_id, 用 delete + insert 模拟
-    if let Err(e) = Database::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await {
-        return json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("删除旧记录失败: {}", e));
-    }
-    match Database::insert(&conn, &updated).await {
-        Ok(_) => json_ok(serde_json::json!({"uuid": uuid, "name": updated.name})),
+    let new_name = body.name.clone().unwrap_or_else(|| current.name.clone());
+    let new_hash = body.hash.clone().unwrap_or_else(|| current.hash.clone());
+    let new_port = body.port.clone().unwrap_or_else(|| current.port.clone());
+
+    // 使用参数化 UPDATE 避免 delete+insert 的非原子性问题
+    let sql = "UPDATE database SET name = $1, hash = $2, port = $3 WHERE uuid = $4";
+    match conn.exec(sql, vec![
+        rbs::Value::String(new_name.clone()),
+        rbs::Value::String(new_hash),
+        rbs::Value::String(new_port),
+        rbs::Value::String(uuid.clone()),
+    ]).await {
+        Ok(r) if r.rows_affected > 0 => json_ok(serde_json::json!({"uuid": uuid, "name": new_name})),
+        Ok(_) => json_err(actix_web::http::StatusCode::NOT_FOUND, "数据库未找到"),
         Err(e) => json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("更新失败: {}", e)),
     }
 }
@@ -367,19 +380,20 @@ async fn api_delete_database(path: web::Path<String>) -> impl Responder {
         Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 连接失败: {}", e)),
     };
 
-    // 先尝试从 cacache 删除数据（忽略错误）
-    let kv = KVStore {
-        hash: None,
-        key: Some(uuid.clone()),
-        value: String::new(),
-    };
-    kv.remove().await;
-
-    // 删除 service 记录
+    // 先删除 service 记录（外键关联）
     let _ = Service::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await;
-    // 删除 database 记录
+    // 删除 database 记录，确认存在后再清理 cacache
     match Database::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await {
-        Ok(r) if r.rows_affected > 0 => json_ok(serde_json::json!({"deleted": uuid})),
+        Ok(r) if r.rows_affected > 0 => {
+            // 从 cacache 删除数据
+            let kv = KVStore {
+                hash: None,
+                key: Some(uuid.clone()),
+                value: String::new(),
+            };
+            kv.remove().await;
+            json_ok(serde_json::json!({"deleted": uuid}))
+        }
         Ok(_) => json_err(actix_web::http::StatusCode::NOT_FOUND, "数据库未找到"),
         Err(e) => json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("删除失败: {}", e)),
     }
