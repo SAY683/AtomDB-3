@@ -275,44 +275,34 @@ async fn download_file(filename: &str) -> Events<Vec<u8>> {
     let rb = get_global_db().await?;
     let conn = rb.acquire().await?;
 
-    // 使用原始 SQL 查询避免 ORM select_by_map 可能的中文编码差异
-    let query_sql = "SELECT uuid, name, hash, port FROM database WHERE name = $1 LIMIT 2";
-    let result = conn.query(query_sql, vec![rbs::Value::String(filename.to_string())]).await
+    // 拉取所有记录，在 Rust 侧匹配（绕过数据库层的中文编码差异）
+    let all_records = Database::select_by_map(&conn, rbs::value!{}).await
         .map_err(|e| ThreadEvents::UnknownError(anyhow::anyhow!("查询失败: {}", e)))?;
+    drop(conn);
 
-    // 解析 query 结果（rbs::Value::Array 类型）
-    let uuid_to_try: Option<String> = match &result {
-        rbs::Value::Array(arr) if !arr.is_empty() => {
-            // 取第一条记录，map 支持 IntoIterator 产生 (&Value, &Value)
-            match &arr[0] {
-                rbs::Value::Map(map) => {
-                    let mut uuid_val = None;
-                    for (k, v) in map.into_iter() {
-                        if k.as_str() == Some("uuid") {
-                            uuid_val = v.as_str().map(String::from);
-                            break;
-                        }
-                    }
-                    uuid_val
-                }
-                _ => None,
-            }
+    // 精确名称匹配
+    let matched = all_records.iter().find(|r| r.name == filename);
+
+    // 如果精确匹配没找到，尝试按名称为 filename 的 service 记录查找
+    let uuid = match matched {
+        Some(r) => r.uuid.clone(),
+        None => {
+            // 最后手段：遍历全部记录，输出名称帮助调试
+            let names: Vec<&str> = all_records.iter().map(|r| r.name.as_str()).collect();
+            eprintln!("[AtomDB] 下载失败: 未找到 \"{}\", 数据库中有: {:?}", filename, names);
+            return Err(ThreadEvents::UnknownError(anyhow::anyhow!(
+                "文件 \"{}\" 未找到。数据库中共 {} 条记录，名称: {:?}",
+                filename, all_records.len(), names
+            )));
         }
-        _ => None,
     };
 
-    if let Some(ref uuid) = uuid_to_try {
-        let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
-        let data = match cacache::read(cache_dir, uuid).await {
-            Ok(d) => d,
-            Err(_) => cacache::read(cache_dir, filename).await
-                .map_err(|e| ThreadEvents::UnknownError(
-                    anyhow::anyhow!("文件数据未找到 (uuid={}): {}", uuid, e)))?,
-        };
-        return Ok(data);
-    }
-
-    Err(ThreadEvents::UnknownError(anyhow::anyhow!("文件 \"{}\" 未找到", filename)))
+    // 从 cacache 读取文件数据
+    let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+    let data = cacache::read(cache_dir, &uuid).await
+        .map_err(|e| ThreadEvents::UnknownError(
+            anyhow::anyhow!("缓存读取失败 (uuid={}): {}", uuid, e)))?;
+    Ok(data)
 }
 
 // ======================== API: 创建数据库 ========================
