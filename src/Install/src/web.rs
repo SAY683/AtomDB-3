@@ -558,10 +558,11 @@ async fn download_by_uuid(path: web::Path<String>) -> impl Responder {
         return json_err(actix_web::http::StatusCode::BAD_REQUEST, "无效的 UUID 格式");
     }
     let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+    fn urlenc(s: &str) -> String { s.bytes().map(|b| format!("%{:02X}", b)).collect() }
     match cacache::read(cache_dir, &uuid).await {
         Ok(data) => HttpResponse::Ok()
             .insert_header((header::CONTENT_TYPE, "application/octet-stream"))
-            .insert_header((header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", uuid)))
+            .insert_header((header::CONTENT_DISPOSITION, format!("attachment; filename=\"download\"; filename*=UTF-8''{}", urlenc(&uuid))))
             .body(data),
         Err(e) => {
             eprintln!("UUID 下载失败 [{}]: {:?}", uuid, e);
