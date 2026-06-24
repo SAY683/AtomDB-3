@@ -38,13 +38,21 @@ async fn get_vfs_db() -> Events<&'static RBatis> {
 
 /// 从环境变量读取管理员密码
 fn admin_password() -> String {
-    std::env::var("ATOMDB_ADMIN_PASSWORD").unwrap_or_else(|_| "admin".to_string())
+    let pw = std::env::var("ATOMDB_ADMIN_PASSWORD").unwrap_or_else(|_| String::new());
+    if pw.is_empty() {
+        eprintln!("[AtomDB] ⚠️  警告: 未设置 ATOMDB_ADMIN_PASSWORD 环境变量，使用默认密码 'admin'");
+        eprintln!("[AtomDB] ⚠️  请设置环境变量以增强安全: export ATOMDB_ADMIN_PASSWORD=your_password");
+        "admin".to_string()
+    } else {
+        pw
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum Permission { Read, Write }
 
-/// 校验请求认证，返回权限等级
+/// 校验请求认证，返回权限等级（同步版本，用于 actix-web handler）
+/// 使用 rfind(':') 分割，支持密码中包含冒号
 fn check_auth(req: &HttpRequest) -> Result<Permission, HttpResponse> {
     let key = req
         .headers()
@@ -52,14 +60,17 @@ fn check_auth(req: &HttpRequest) -> Result<Permission, HttpResponse> {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    let parts: Vec<&str> = key.splitn(2, ':').collect();
-    if parts.len() != 2 {
-        return Err(HttpResponse::Unauthorized().json(serde_json::json!({
+    // 使用最后一个冒号分割，这样密码本身可以包含冒号
+    let colon_pos = match key.rfind(':') {
+        Some(p) => p,
+        None => return Err(HttpResponse::Unauthorized().json(serde_json::json!({
             "success": false, "error": "需要 X-API-Key 头，格式: <password>:<read|write>"
-        })));
-    }
+        }))),
+    };
+    let password = &key[..colon_pos];
+    let perm_str = &key[colon_pos + 1..];
 
-    let (password, perm_str) = (parts[0], parts[1]);
+    // 注: api_keys 表已创建但认证集成需要异步重构，当前仅支持管理员密码模式
     if password != admin_password() {
         return Err(HttpResponse::Unauthorized().json(serde_json::json!({
             "success": false, "error": "密码错误"
