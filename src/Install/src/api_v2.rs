@@ -199,7 +199,6 @@ async fn get_node_detail(uuid: &str) -> HttpResponse {
             "uuid": node.uuid,
             "name": node.name,
             "children": items,
-            "created_at": node.created_at,
         }))
     } else {
         // 是文件
@@ -239,9 +238,9 @@ async fn list_children(parent_uuid: Option<&str>) -> HttpResponse {
         Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 错误: {}", e)),
     };
     let sql = if parent_uuid.is_some() {
-        "SELECT uuid, parent_uuid, name, is_dir, content_hash, file_size, created_at FROM file_node WHERE parent_uuid = $1 ORDER BY is_dir DESC, name ASC"
+        "SELECT uuid, parent_uuid, name, is_dir, content_hash, file_size FROM file_node WHERE parent_uuid = $1 ORDER BY is_dir DESC, name ASC"
     } else {
-        "SELECT uuid, parent_uuid, name, is_dir, content_hash, file_size, created_at FROM file_node WHERE parent_uuid IS NULL ORDER BY is_dir DESC, name ASC"
+        "SELECT uuid, parent_uuid, name, is_dir, content_hash, file_size FROM file_node WHERE parent_uuid IS NULL ORDER BY is_dir DESC, name ASC"
     };
     let stmt = match parent_uuid {
         Some(pid) => sea_orm::Statement::from_sql_and_values(
@@ -306,7 +305,6 @@ async fn api_upload_file(req: HttpRequest, body: web::Bytes) -> impl Responder {
             is_dir: true,
             content_hash: None,
             file_size: 0,
-            created_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string(),
         };
         match FileNode::insert(&conn, &node).await {
             Ok(_) => json_ok(serde_json::json!({"uuid": node_uuid, "name": dir_name, "is_dir": true})),
@@ -328,7 +326,6 @@ async fn api_upload_file(req: HttpRequest, body: web::Bytes) -> impl Responder {
             is_dir: false,
             content_hash: Some(integrity.to_string()),
             file_size: size,
-            created_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string(),
         };
         match FileNode::insert(&conn, &node).await {
             Ok(_) => json_ok(serde_json::json!({
@@ -565,7 +562,6 @@ async fn api_create_symlink(req: HttpRequest, body: web::Json<CreateSymlinkReq>)
         is_dir: false,
         content_hash: None,
         file_size: 0,
-        created_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string(),
     };
     let link = FileSymlink {
         uuid: sym_uuid.clone(),

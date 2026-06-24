@@ -131,7 +131,6 @@ pub mod database_config {
         pub is_dir: bool,
         pub content_hash: Option<String>,
         pub file_size: i64,
-        pub created_at: String,
     }
     crud!(FileNode{});
 
