@@ -536,7 +536,7 @@ async fn api_copy_node(req: HttpRequest, path: web::Path<String>, body: web::Jso
     let src = match src { Some(s) => s, None => return json_err(actix_web::http::StatusCode::NOT_FOUND, "源节点未找到") };
     let new_uuid = Uuid::new_v4().to_string();
     let new_name = body.name.clone().unwrap_or_else(|| format!("{} (副本)", src.name));
-    // 复制 cacache 内容（如文件有内容）
+    // 复制文件内容（cacache 内部按内容去重，相同数据不额外占用空间）
     if !src.is_dir {
         let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
         if let Ok(data) = cacache::read(cache_dir, &uuid).await {

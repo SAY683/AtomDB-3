@@ -177,6 +177,16 @@
   </div>
 </div>
 
+<!-- Directory Picker Modal -->
+<div class="modal-overlay" id="dirPickerModal">
+  <div class="modal">
+    <h2 id="dirPickerTitle">选择目标目录</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:12px">点击选择一个目录作为目标位置：</p>
+    <div id="dirTreeList" style="max-height:300px;overflow-y:auto;margin-bottom:12px;background:var(--bg);border-radius:6px;padding:8px"></div>
+    <div class="btn-row"><button onclick="closeModal('dirPickerModal')">取消</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -264,6 +274,12 @@ function renderFileList(resp) {
     return;
   }
   el.innerHTML = '<div class="file-list">';
+  // 全选行
+  el.innerHTML += `<div class="file-row" style="border-bottom:2px solid var(--border)">
+    <input type="checkbox" onchange="toggleAll(this.checked)" ${selectedUuids.size === items.filter(i=>!i.parent_uuid||i.parent_uuid===currentUuid).length ? 'checked' : ''}>
+    <span style="flex:1;font-size:12px;color:var(--muted)">全选 / 反选</span>
+    <span style="font-size:12px;color:var(--muted)">${selectedUuids.size} 项已选</span>
+  </div>`;
   items.sort((a,b) => (b.is_dir ? 1 : 0) - (a.is_dir ? 1 : 0));
   items.forEach(item => {
     const icon = item.is_dir ? '📁' : (item.symlink ? '🔗' : '📄');
@@ -403,25 +419,41 @@ function updateSelUI() {
   document.getElementById('copyBtn').style.display = n ? '' : 'none';
   if (currentUuid) document.getElementById('moveBtn').style.display = 'none';
 }
-async function showMoveCopyModal(action) {
+let moveCopyAction = 'move';
+function showMoveCopyModal(action) {
   if (!selectedUuids.size) return;
-  const actName = action === 'move' ? '移动' : '复制';
-  const dirs = [].concat(
-    Object.values(treeData).filter(i => i.is_dir),
-    {uuid: null, name: '/ (根目录)', is_dir: true}
-  );
-  let opts = dirs.map(d => `<option value="${d.uuid || ''}">${d.name}</option>`).join('');
-  const target = prompt(`选择目标目录 (输入 UUID 或留空=根目录):\n\n可用目录:\n${dirs.map(d => `  ${d.uuid || '(根)'} → ${d.name}`).join('\n')}`);
-  if (target === null) return;
-  const targetUuid = target.trim() || null;
+  moveCopyAction = action;
+  const dirs = Object.values(treeData).filter(i => i.is_dir);
+  let treeHtml = '<div class="tree-item" onclick="pickDir(null)" style="font-weight:600;cursor:pointer;padding:6px 8px;border-radius:4px">📂 / (根目录)</div>';
+  dirs.forEach(d => {
+    const indent = 20;
+    treeHtml += `<div class="tree-item" onclick="pickDir('${d.uuid}')" style="padding-left:${8+indent}px;cursor:pointer;padding:6px 8px;border-radius:4px">📁 ${esc(d.name)}</div>`;
+  });
+  document.getElementById('dirTreeList').innerHTML = treeHtml;
+  document.getElementById('dirPickerModal').classList.add('active');
+}
+function pickDir(uuid) {
+  closeModal('dirPickerModal');
+  const actName = moveCopyAction === 'move' ? '移动' : '复制';
+  const targetUuid = uuid || '';
   const uuids = Array.from(selectedUuids);
-  const endpoint = action === 'move' ? '/api/v2/files/batch/move' : '/api/v2/files/batch/copy';
-  const j = await apiFetch('POST', endpoint, JSON.stringify({uuids, target_parent: targetUuid || ''}));
-  if (j.success) {
-    showToast(`✅ ${actName}完成: ${j.data?.[action === 'move' ? 'moved' : 'copied']?.length || '?'} 项`);
-    selectedUuids.clear(); updateSelUI();
-    refreshCurrent(); refreshTree();
-  } else showToast(`❌ ${actName}失败: ${j.error}`, true);
+  const endpoint = moveCopyAction === 'move' ? '/api/v2/files/batch/move' : '/api/v2/files/batch/copy';
+  apiFetch('POST', endpoint, JSON.stringify({uuids, target_parent: targetUuid})).then(j => {
+    if (j.success) {
+      showToast(`✅ ${actName}完成: ${(j.data?.[moveCopyAction === 'move' ? 'moved' : 'copied'] || []).length} 项`);
+      selectedUuids.clear(); updateSelUI();
+      refreshCurrent(); refreshTree();
+    } else showToast(`❌ ${actName}失败: ${j.error}`, true);
+  });
+}
+function toggleAll(checked) {
+  // 获取当前目录所有可见文件项
+  const items = Object.values(treeData).filter(i => i.parent_uuid === currentUuid || (!i.parent_uuid && !currentUuid));
+  items.forEach(i => {
+    if (checked) selectedUuids.add(i.uuid); else selectedUuids.delete(i.uuid);
+  });
+  updateSelUI();
+  refreshCurrent();
 }
 function showToast(msg, isError) {
   const t = document.getElementById('toast');
