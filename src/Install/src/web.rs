@@ -274,20 +274,44 @@ async fn download(filename: web::Path<String>) -> impl Responder {
 async fn download_file(filename: &str) -> Events<Vec<u8>> {
     let rb = get_global_db().await?;
     let conn = rb.acquire().await?;
-    let databases = Database::select_by_map(&conn, rbs::value!{"name": filename}).await?;
-    let services = Service::select_by_map(&conn, rbs::value!{"name": filename}).await?;
-    drop(conn);
 
-    for db_rec in &databases {
-        if let Some(svc) = services.iter().find(|s| s.uuid == db_rec.uuid) {
-            // 直接使用 cacache API 避免 Disk trait 的 .expect() panic
-            let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
-            let data = cacache::read(&cache_dir, &svc.uuid).await
-                .map_err(|e| ThreadEvents::UnknownError(
-                    anyhow::anyhow!("缓存读取失败 (uuid={}): {}", &svc.uuid, e)))?;
-            return Ok(data);
+    // 使用原始 SQL 查询避免 ORM select_by_map 可能的中文编码差异
+    let query_sql = "SELECT uuid, name, hash, port FROM database WHERE name = $1 LIMIT 2";
+    let result = conn.query(query_sql, vec![rbs::Value::String(filename.to_string())]).await
+        .map_err(|e| ThreadEvents::UnknownError(anyhow::anyhow!("查询失败: {}", e)))?;
+
+    // 解析 query 结果（rbs::Value::Array 类型）
+    let uuid_to_try: Option<String> = match &result {
+        rbs::Value::Array(arr) if !arr.is_empty() => {
+            // 取第一条记录，map 支持 IntoIterator 产生 (&Value, &Value)
+            match &arr[0] {
+                rbs::Value::Map(map) => {
+                    let mut uuid_val = None;
+                    for (k, v) in map.into_iter() {
+                        if k.as_str() == Some("uuid") {
+                            uuid_val = v.as_str().map(String::from);
+                            break;
+                        }
+                    }
+                    uuid_val
+                }
+                _ => None,
+            }
         }
+        _ => None,
+    };
+
+    if let Some(ref uuid) = uuid_to_try {
+        let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+        let data = match cacache::read(cache_dir, uuid).await {
+            Ok(d) => d,
+            Err(_) => cacache::read(cache_dir, filename).await
+                .map_err(|e| ThreadEvents::UnknownError(
+                    anyhow::anyhow!("文件数据未找到 (uuid={}): {}", uuid, e)))?,
+        };
+        return Ok(data);
     }
+
     Err(ThreadEvents::UnknownError(anyhow::anyhow!("文件 \"{}\" 未找到", filename)))
 }
 
