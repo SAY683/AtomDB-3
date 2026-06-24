@@ -495,14 +495,34 @@ let moveCopyAction = 'move';
 function showMoveCopyModal(action) {
   if (!selectedUuids.size) return;
   moveCopyAction = action;
-  const dirs = Object.values(treeData).filter(i => i.is_dir);
-  let treeHtml = '<div class="tree-item" onclick="pickDir(null)" style="font-weight:600;cursor:pointer;padding:6px 8px;border-radius:4px">📂 / (根目录)</div>';
-  dirs.forEach(d => {
-    const indent = 20;
-    treeHtml += `<div class="tree-item" onclick="pickDir('${d.uuid}')" style="padding-left:${8+indent}px;cursor:pointer;padding:6px 8px;border-radius:4px">📁 ${esc(d.name)}</div>`;
-  });
+  // 从 treeData 构建目录树 HTML
+  function renderDirTree(parentUuid, depth) {
+    let html = '';
+    const dirs = Object.values(treeData).filter(i => i.is_dir && i.parent_uuid === parentUuid);
+    dirs.sort((a,b) => a.name.localeCompare(b.name));
+    for (const d of dirs) {
+      const children = Object.values(treeData).filter(i => i.is_dir && i.parent_uuid === d.uuid);
+      const hasChildren = children.length > 0;
+      const toggle = hasChildren ? `<span onclick="event.stopPropagation();toggleDirTree(this)" style="cursor:pointer;width:16px;display:inline-block;text-align:center;flex-shrink:0">▶</span>` : '<span style="width:16px;display:inline-block;flex-shrink:0"></span>';
+      html += `<div class="tree-item" onclick="pickDir('${d.uuid}')" style="padding-left:${12 + depth * 20}px;display:flex;align-items:center;gap:4px">
+        ${toggle}<span>📁</span><span>${esc(d.name)}</span></div>`;
+      // 默认展开第一级，更深层折叠
+      const display = depth === 0 ? '' : 'none';
+      html += `<div class="dir-children" style="display:${display}">${renderDirTree(d.uuid, depth + 1)}</div>`;
+    }
+    return html;
+  }
+  const rootHtml = '<div class="tree-item" onclick="pickDir(null)" style="font-weight:600;padding:6px 8px;border-radius:4px;cursor:pointer">📂 / (根目录)</div>';
+  const treeHtml = rootHtml + '<div class="dir-children">' + renderDirTree(null, 0) + '</div>';
   document.getElementById('dirTreeList').innerHTML = treeHtml;
   document.getElementById('dirPickerModal').classList.add('active');
+}
+function toggleDirTree(span) {
+  const children = span.parentElement.nextElementSibling;
+  if (!children) return;
+  const isCollapsed = children.style.display === 'none';
+  children.style.display = isCollapsed ? '' : 'none';
+  span.textContent = isCollapsed ? '▼' : '▶';
 }
 async function pickDir(uuid) {
   closeModal('dirPickerModal');
