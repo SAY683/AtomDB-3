@@ -122,6 +122,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/files/{uuid}/copy", web::post().to(api_copy_node))
             .route("/files/batch/move", web::post().to(api_batch_move))
             .route("/files/batch/copy", web::post().to(api_batch_copy))
+            .route("/files/batch/delete", web::post().to(api_batch_delete))
             .route("/files/{uuid}", web::delete().to(api_delete_node))
             .route("/files/symlink", web::post().to(api_create_symlink))
             // 管理
@@ -153,8 +154,14 @@ async fn api_get_token() -> impl Responder {
     json_ok(serde_json::json!({
         "token_read":  format!("{}:read", pw),
         "token_write": format!("{}:write", pw),
-        "permissions": ["read", "write"]
+        "permissions": ["read", "write"],
+        "current_permission": env_permission()
     }))
+}
+
+/// 判断当前环境权限（未设密码时默认只读）
+fn env_permission() -> &'static str {
+    if std::env::var("ATOMDB_ADMIN_PASSWORD").is_ok() { "write" } else { "read" }
 }
 
 // ======================== 文件列表（根目录） ========================
@@ -622,6 +629,34 @@ async fn api_batch_copy(req: HttpRequest, body: web::Json<BatchCopyReq>) -> impl
         }
     }
     json_ok(serde_json::json!({"copied": copied, "target": body.target_parent}))
+}
+
+// ======================== 批量删除 ========================
+
+#[derive(serde::Deserialize)]
+struct BatchDeleteReq { uuids: Vec<String> }
+
+async fn api_batch_delete(req: HttpRequest, body: web::Json<BatchDeleteReq>) -> impl Responder {
+    let perm = match check_auth(&req) { Ok(p) => p, Err(e) => return e };
+    if let Err(e) = require_write(&perm) { return e; }
+    let rb = match get_vfs_db().await { Ok(rb) => rb, Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 错误: {}", e)) };
+    let conn = match rb.acquire().await { Ok(c) => c, Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("连接失败: {}", e)) };
+    let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+    let mut deleted = Vec::new();
+    for uid in &body.uuids {
+        // 收集子节点 UUID
+        let children = FileNode::select_by_map(&conn, rbs::value!{"parent_uuid": uid}).await.unwrap_or_default();
+        let child_ids: Vec<String> = children.into_iter().map(|c| c.uuid).collect();
+        // 删除 DB 记录（CASCADE 自动处理子节点）
+        let _ = FileSymlink::delete_by_map(&conn, rbs::value!{"uuid": uid}).await;
+        let _ = FileNode::delete_by_map(&conn, rbs::value!{"uuid": uid}).await;
+        // 清理 cacache
+        for id in std::iter::once(uid.clone()).chain(child_ids) {
+            let _ = cacache::remove(cache_dir, &id).await;
+        }
+        deleted.push(uid.clone());
+    }
+    json_ok(serde_json::json!({"deleted": deleted}))
 }
 
 // ======================== 删除节点 ========================

@@ -140,6 +140,7 @@
         <button onclick="showNewDirModal()">📁 新建目录</button>
         <button onclick="showMoveCopyModal('move')" id="moveBtn" style="display:none">↗ 移动</button>
         <button onclick="showMoveCopyModal('copy')" id="copyBtn" style="display:none">📋 复制</button>
+        <button onclick="batchDelete()" id="delBatchBtn" style="display:none">🗑 删除</button>
         <span id="selInfo" style="font-size:12px;color:var(--muted);display:none"></span>
         <input type="file" id="fileInput" multiple onchange="uploadFiles(this.files)">
       </div>
@@ -204,6 +205,9 @@ async function init() {
       API_KEY = j.data.token_write;
       document.getElementById('apiKeyInput').value = API_KEY;
       document.getElementById('apiKeyInput').title = 'X-API-Key: ' + API_KEY;
+      const perm = j.data.current_permission || 'read';
+      document.getElementById('permBadge').textContent = perm === 'write' ? '✏️ 读写 (有权限)' : '🔍 仅读';
+      if (perm !== 'write') document.getElementById('uploadBtn').style.display = 'none';
     } else {
       // 降级: 尝试用空密码（开发模式）
       API_KEY = 'admin:write';
@@ -413,11 +417,21 @@ function toggleSel(uuid) {
 }
 function updateSelUI() {
   const n = selectedUuids.size;
+  const perm = document.getElementById('permBadge').textContent || 'read';
+  const isWrite = perm.includes('读写');
   document.getElementById('selInfo').style.display = n ? '' : 'none';
   document.getElementById('selInfo').textContent = `已选 ${n} 项`;
-  document.getElementById('moveBtn').style.display = n ? '' : 'none';
-  document.getElementById('copyBtn').style.display = n ? '' : 'none';
-  if (currentUuid) document.getElementById('moveBtn').style.display = 'none';
+  document.getElementById('moveBtn').style.display = (n && isWrite) ? '' : 'none';
+  document.getElementById('copyBtn').style.display = (n && isWrite) ? '' : 'none';
+  document.getElementById('delBatchBtn').style.display = (n && isWrite) ? '' : 'none';
+}
+async function batchDelete() {
+  if (!selectedUuids.size) return;
+  if (!confirm(`确定删除选中的 ${selectedUuids.size} 项？不可恢复。`)) return;
+  const uuids = Array.from(selectedUuids);
+  const j = await apiFetch('POST', '/api/v2/files/batch/delete', JSON.stringify({uuids}));
+  if (j.success) { showToast(`🗑 已删除 ${j.data?.deleted?.length || 0} 项`); selectedUuids.clear(); updateSelUI(); refreshCurrent(); refreshTree(); }
+  else showToast(`❌ 删除失败: ${j.error}`, true);
 }
 let moveCopyAction = 'move';
 function showMoveCopyModal(action) {
