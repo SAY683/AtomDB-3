@@ -265,7 +265,7 @@ function renderTable(data) {
       <td>${esc(d.port)}</td>
       <td>${cacheLabel}</td>
       <td class="actions" style="justify-content:center">
-        <a href="/dl/${encodeURIComponent(d.name)}" target="_blank" title="下载">⬇</a>
+        <a href="/dl/by-uuid/${d.uuid}" target="_blank" title="下载">⬇</a>
         <button class="del-btn" onclick="confirmDelete('${esc(d.uuid)}', '${esc(d.name)}')" title="删除">✕</button>
       </td>
     </tr>`;

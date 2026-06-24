@@ -98,7 +98,8 @@ pub async fn web() -> Events<Server> {
             .route("/api/v1/files/{uuid}", web::delete().to(api_delete_file))
             // 系统
             .route("/health", web::get().to(health))
-            // 下载
+            // 下载（按UUID和按名称）
+            .route("/dl/by-uuid/{uuid}", web::get().to(download_by_uuid))
             .route("/dl/{filename}", web::get().to(download))
     });
 
@@ -275,23 +276,23 @@ async fn download_file(filename: &str) -> Events<Vec<u8>> {
     let rb = get_global_db().await?;
     let conn = rb.acquire().await?;
 
-    // 拉取所有记录，在 Rust 侧匹配（绕过数据库层的中文编码差异）
+    // 拉取所有记录，在 Rust 侧进行名称匹配
+    // 注: 不传 WHERE 条件是因为 rbatis 4.9 + rbdc-pg 在参数化查询中
+    // 对中文 String 的 WHERE 绑定存在兼容问题，改用全量拉取+Rust匹配绕过
     let all_records = Database::select_by_map(&conn, rbs::value!{}).await
         .map_err(|e| ThreadEvents::UnknownError(anyhow::anyhow!("查询失败: {}", e)))?;
     drop(conn);
 
-    // 精确名称匹配
+    // 精确名称匹配（Rust 侧 String 比较）
     let matched = all_records.iter().find(|r| r.name == filename);
 
-    // 如果精确匹配没找到，尝试按名称为 filename 的 service 记录查找
     let uuid = match matched {
         Some(r) => r.uuid.clone(),
         None => {
-            // 最后手段：遍历全部记录，输出名称帮助调试
             let names: Vec<&str> = all_records.iter().map(|r| r.name.as_str()).collect();
-            eprintln!("[AtomDB] 下载失败: 未找到 \"{}\", 数据库中有: {:?}", filename, names);
+            eprintln!("[AtomDB] 下载失败: \"{}\" 未匹配, 现有名称: {:?}", filename, names);
             return Err(ThreadEvents::UnknownError(anyhow::anyhow!(
-                "文件 \"{}\" 未找到。数据库中共 {} 条记录，名称: {:?}",
+                "文件 \"{}\" 未找到。共 {} 条记录, 名称: {:?}",
                 filename, all_records.len(), names
             )));
         }
@@ -508,6 +509,27 @@ async fn api_delete_file(path: web::Path<String>) -> impl Responder {
         }
         Ok(_) => json_err(actix_web::http::StatusCode::NOT_FOUND, "文件未找到"),
         Err(e) => json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("删除失败: {}", e)),
+    }
+}
+
+// ======================== 按 UUID 下载 ========================
+
+async fn download_by_uuid(path: web::Path<String>) -> impl Responder {
+    let uuid = path.into_inner();
+    // 验证 UUID 格式 (简单检查: 只允许 hex + 连字符)
+    if !uuid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return json_err(actix_web::http::StatusCode::BAD_REQUEST, "无效的 UUID 格式");
+    }
+    let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+    match cacache::read(cache_dir, &uuid).await {
+        Ok(data) => HttpResponse::Ok()
+            .insert_header((header::CONTENT_TYPE, "application/octet-stream"))
+            .insert_header((header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", uuid)))
+            .body(data),
+        Err(e) => {
+            eprintln!("UUID 下载失败 [{}]: {:?}", uuid, e);
+            json_err(actix_web::http::StatusCode::NOT_FOUND, &format!("文件 {} 未找到", uuid))
+        }
     }
 }
 
