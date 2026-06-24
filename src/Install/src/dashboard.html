@@ -341,30 +341,42 @@ document.getElementById('uploadZone').addEventListener('dragover', e => { e.prev
 document.getElementById('uploadZone').addEventListener('dragleave', e => { e.currentTarget.classList.remove('dragover'); });
 document.getElementById('uploadZone').addEventListener('drop', e => {
   e.preventDefault(); e.currentTarget.classList.remove('dragover');
+  // 同步提取所有条目（webkitGetAsEntry 仅在事件循环内有效）
+  const syncEntries = [];
   const items = e.dataTransfer.items;
   if (items && items.length) {
     for (let i = 0; i < items.length; i++) {
       const entry = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
-      if (entry) scanEntry(entry, currentUuid);
+      if (entry) syncEntries.push(entry);
       else if (items[i].kind === 'file') uploadFileItem(items[i].getAsFile(), currentUuid);
     }
   } else {
     for (const f of e.dataTransfer.files) uploadFileItem(f, currentUuid);
   }
+  // 异步处理（此时 entry 已同步提取到 syncEntries，安全）
+  for (const entry of syncEntries) scanEntry(entry, currentUuid);
 });
 
+// 递归扫描目录（同步读取所有条目后再 await，避免 GC 导致 entry 失效）
 async function scanEntry(entry, parentUuid) {
   if (entry.isFile) {
     entry.file(f => uploadFileItem(f, parentUuid));
   } else if (entry.isDirectory) {
-    const dirReader = entry.createReader();
-    let url = `/api/v2/files/upload?name=${encodeURIComponent(entry.name + '/')}`;
+    // 先同步提取名称+读取所有子条目
+    const dirName = entry.name;
+    const reader = entry.createReader();
+    const allEntries = await new Promise(resolve => {
+      const batch = [];
+      function readBatch() { reader.readEntries(rs => { if (rs.length) { batch.push(...rs); readBatch(); } else resolve(batch); }); }
+      readBatch();
+    });
+    // 创建远程目录（此时可安全 await，数据已同步）
+    let url = `/api/v2/files/upload?name=${encodeURIComponent(dirName + '/')}`;
     if (parentUuid) url += `&parent=${encodeURIComponent(parentUuid)}`;
     const j = await apiFetch('POST', url, '');
-    let dirUuid = parentUuid;
-    if (j.success && j.data && j.data.uuid) dirUuid = j.data.uuid;
-    const entries = await new Promise(resolve => { dirReader.readEntries(results => resolve(results)); });
-    for (const child of entries) scanEntry(child, dirUuid);
+    const dirUuid = (j?.success && j?.data?.uuid) ? j.data.uuid : parentUuid;
+    // 递归处理子条目
+    for (const child of allEntries) scanEntry(child, dirUuid);
   }
 }
 
