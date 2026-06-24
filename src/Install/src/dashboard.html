@@ -434,19 +434,19 @@ function toggleSel(uuid) {
 }
 function updateSelUI() {
   const n = selectedUuids.size;
-  const perm = document.getElementById('permBadge').textContent || 'read';
-  const isWrite = perm.includes('读写');
   document.getElementById('selInfo').style.display = n ? '' : 'none';
   document.getElementById('selInfo').textContent = `已选 ${n} 项`;
-  document.getElementById('moveBtn').style.display = (n && isWrite) ? '' : 'none';
-  document.getElementById('copyBtn').style.display = (n && isWrite) ? '' : 'none';
-  document.getElementById('delBatchBtn').style.display = (n && isWrite) ? '' : 'none';
+  // 有选中项就显示按钮（权限由后端 API 控制，返回 403 时前端再提示）
+  document.getElementById('moveBtn').style.display = n ? '' : 'none';
+  document.getElementById('copyBtn').style.display = n ? '' : 'none';
+  document.getElementById('delBatchBtn').style.display = n ? '' : 'none';
 }
 async function batchDelete() {
   if (!selectedUuids.size) return;
   if (!confirm(`确定删除选中的 ${selectedUuids.size} 项？不可恢复。`)) return;
   const uuids = Array.from(selectedUuids);
   const j = await apiFetch('POST', '/api/v2/files/batch/delete', JSON.stringify({uuids}));
+  if (!j) { showToast('❌ 请求失败（密钥可能无效）', true); return; }
   if (j.success) { showToast(`🗑 已删除 ${j.data?.deleted?.length || 0} 项`); selectedUuids.clear(); updateSelUI(); refreshCurrent(); refreshTree(); }
   else showToast(`❌ 删除失败: ${j.error}`, true);
 }
@@ -470,11 +470,16 @@ function pickDir(uuid) {
   const uuids = Array.from(selectedUuids);
   const endpoint = moveCopyAction === 'move' ? '/api/v2/files/batch/move' : '/api/v2/files/batch/copy';
   apiFetch('POST', endpoint, JSON.stringify({uuids, target_parent: targetUuid})).then(j => {
+    if (!j) { showToast(`❌ ${actName}失败（请求未响应，检查密钥）`, true); return; }
     if (j.success) {
       showToast(`✅ ${actName}完成: ${(j.data?.[moveCopyAction === 'move' ? 'moved' : 'copied'] || []).length} 项`);
       selectedUuids.clear(); updateSelUI();
       refreshCurrent(); refreshTree();
-    } else showToast(`❌ ${actName}失败: ${j.error}`, true);
+    } else {
+      const msg = j.error || '未知错误';
+      if (msg.includes('权限') || msg.includes('Forbidden')) showToast(`❌ 权限不足: 当前 API 密钥不允许 ${actName}`, true);
+      else showToast(`❌ ${actName}失败: ${msg}`, true);
+    }
   });
 }
 function toggleAll(checked) {
