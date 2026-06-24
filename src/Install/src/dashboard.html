@@ -136,13 +136,14 @@
     <div class="content">
       <div class="toolbar">
         <button onclick="refreshCurrent()">⟳ 刷新</button>
-        <button class="primary file-btn" onclick="document.getElementById('fileInput').click()">＋ 上传</button>
+        <button class="primary file-btn" onclick="document.getElementById('fileInput').click()">＋ 上传文件</button>
         <button onclick="showNewDirModal()">📁 新建目录</button>
         <button onclick="showMoveCopyModal('move')" id="moveBtn" style="display:none">↗ 移动</button>
         <button onclick="showMoveCopyModal('copy')" id="copyBtn" style="display:none">📋 复制</button>
         <button onclick="batchDelete()" id="delBatchBtn" style="display:none">🗑 删除</button>
         <span id="selInfo" style="font-size:12px;color:var(--muted);display:none"></span>
         <input type="file" id="fileInput" multiple onchange="uploadFiles(this.files)">
+        <input type="file" id="dirInput" webkitdirectory multiple onchange="uploadDirPicked(this.files)">
       </div>
       <div class="upload-zone" id="uploadZone">📁 拖拽文件/文件夹到此处上传</div>
       <div class="progress-bar" id="progressBar"><div class="fill" id="progressFill"></div></div>
@@ -390,6 +391,32 @@ async function uploadFileItem(file, parentUuid) {
     if (j.success) showToast(`✅ ${file.name}`);
     else showToast(`❌ ${file.name}: ${j.error}`, true);
   } catch(e) { showToast(`❌ ${file.name}: ${e.message}`, true); }
+}
+
+// 目录选择器上传（webkitRelativePath 保留目录结构）
+async function uploadDirPicked(files) {
+  if (!files || !files.length) return;
+  const pathMap = {}; // cache: dirPath → serverUuid
+  for (const f of files) {
+    const parts = (f.webkitRelativePath || f.name).split('/');
+    const fileName = parts.pop();
+    let parentUuid = currentUuid;
+    // 逐层创建目录
+    let dirPath = '';
+    for (const dirName of parts) {
+      dirPath += '/' + dirName;
+      if (!pathMap[dirPath]) {
+        let url = `/api/v2/files/upload?name=${encodeURIComponent(dirName + '/')}`;
+        if (parentUuid) url += `&parent=${encodeURIComponent(parentUuid)}`;
+        const j = await apiFetch('POST', url, '');
+        pathMap[dirPath] = (j?.success && j?.data?.uuid) ? j.data.uuid : parentUuid;
+      }
+      parentUuid = pathMap[dirPath];
+    }
+    // 上传文件到最终目录
+    await uploadFileItem(f, parentUuid);
+  }
+  refreshCurrent(); refreshTree();
 }
 
 async function uploadFiles(files) {
