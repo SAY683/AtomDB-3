@@ -136,7 +136,8 @@
     <div class="content">
       <div class="toolbar">
         <button onclick="refreshCurrent()">⟳ 刷新</button>
-        <button class="primary file-btn" onclick="document.getElementById('fileInput').click()">＋ 上传文件</button>
+        <button class="primary file-btn" id="uploadBtn" onclick="document.getElementById('fileInput').click()">＋ 上传文件</button>
+        <button onclick="document.getElementById('dirInput').click()">📁 上传目录</button>
         <button onclick="showNewDirModal()">📁 新建目录</button>
         <button onclick="showMoveCopyModal('move')" id="moveBtn" style="display:none">↗ 移动</button>
         <button onclick="showMoveCopyModal('copy')" id="copyBtn" style="display:none">📋 复制</button>
