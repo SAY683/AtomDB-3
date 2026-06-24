@@ -231,7 +231,8 @@ async function apiFetch(method, path, body) {
   const headers = {'X-API-Key': API_KEY};
   if (body && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
   const r = await fetch(path, { method, headers, body });
-  return r.json();
+  const text = await r.text();
+  try { return JSON.parse(text); } catch(e) { console.error('API响应非JSON:', text); return null; }
 }
 
 async function refreshTree() {
@@ -463,24 +464,27 @@ function showMoveCopyModal(action) {
   document.getElementById('dirTreeList').innerHTML = treeHtml;
   document.getElementById('dirPickerModal').classList.add('active');
 }
-function pickDir(uuid) {
+async function pickDir(uuid) {
   closeModal('dirPickerModal');
   const actName = moveCopyAction === 'move' ? '移动' : '复制';
   const targetUuid = uuid || '';
   const uuids = Array.from(selectedUuids);
   const endpoint = moveCopyAction === 'move' ? '/api/v2/files/batch/move' : '/api/v2/files/batch/copy';
-  apiFetch('POST', endpoint, JSON.stringify({uuids, target_parent: targetUuid})).then(j => {
-    if (!j) { showToast(`❌ ${actName}失败（请求未响应，检查密钥）`, true); return; }
+  try {
+    const j = await apiFetch('POST', endpoint, JSON.stringify({uuids, target_parent: targetUuid}));
+    if (!j) { showToast(`❌ ${actName}失败（请求未响应）`, true); return; }
     if (j.success) {
       showToast(`✅ ${actName}完成: ${(j.data?.[moveCopyAction === 'move' ? 'moved' : 'copied'] || []).length} 项`);
       selectedUuids.clear(); updateSelUI();
       refreshCurrent(); refreshTree();
     } else {
-      const msg = j.error || '未知错误';
-      if (msg.includes('权限') || msg.includes('Forbidden')) showToast(`❌ 权限不足: 当前 API 密钥不允许 ${actName}`, true);
+      const msg = j.error || '';
+      if (msg.includes('权限') || msg.includes('Forbidden')) showToast(`❌ 权限不足: 当前密钥不允许 ${actName}`, true);
       else showToast(`❌ ${actName}失败: ${msg}`, true);
     }
-  });
+  } catch(e) {
+    showToast(`❌ ${actName}请求异常: ${e.message}`, true);
+  }
 }
 function toggleAll(checked) {
   currentItems.forEach(i => {
