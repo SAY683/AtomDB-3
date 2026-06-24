@@ -204,7 +204,7 @@ async function init() {
   try {
     const r = await fetch('/api/v2/auth/token');
     const j = await r.json();
-    if (j.success && j.data && j.data.token_write) {
+    if (j?.success && j.data && j.data.token_write) {
       API_KEY = j.data.token_write;
       document.getElementById('apiKeyInput').value = API_KEY;
       document.getElementById('apiKeyInput').title = 'X-API-Key: ' + API_KEY;
@@ -236,11 +236,12 @@ async function apiFetch(method, path, body) {
   const text = await r.text();
   try { return JSON.parse(text); } catch(e) { console.error('API响应非JSON:', text); return null; }
 }
+function apiSuccess(j) { return j && j?.success; }
 
 async function refreshTree() {
   async function fetchChildren(parentUuid) {
     const r = await apiFetch('GET', '/api/v2/files' + (parentUuid ? '/' + parentUuid : ''));
-    if (!r.success) return;
+    if (!apiSuccess(r)) return;
     const data = r.data;
     const items = data.children || data;
     if (!Array.isArray(items)) return;
@@ -250,7 +251,7 @@ async function refreshTree() {
     }
   }
   const r = await apiFetch('GET', '/api/v2/files');
-  if (!r.success) { document.getElementById('treeRoot').innerHTML = '<div class="tree-item" style="color:var(--red)">⚠️ 加载失败</div>'; return; }
+  if (!apiSuccess(r)) { document.getElementById('treeRoot').innerHTML = '<div class="tree-item" style="color:var(--red)">⚠️ 加载失败</div>'; return; }
   treeData = {};
   for (const item of r.data || []) {
     treeData[item.uuid] = item;
@@ -389,7 +390,7 @@ async function uploadFileItem(file, parentUuid) {
     let url = `/api/v2/files/upload?name=${encodeURIComponent(file.name)}`;
     if (parentUuid) url += `&parent=${encodeURIComponent(parentUuid)}`;
     const j = await apiFetch('POST', url, file);
-    if (j.success) showToast(`✅ ${file.name}`);
+    if (j?.success) showToast(`✅ ${file.name}`);
     else showToast(`❌ ${file.name}: ${j.error}`, true);
   } catch(e) { showToast(`❌ ${file.name}: ${e.message}`, true); }
 }
@@ -434,7 +435,7 @@ async function submitNewDir() {
   let url = `/api/v2/files/upload?name=${encodeURIComponent(name + '/')}`;
   if (currentUuid) url += `&parent=${encodeURIComponent(currentUuid)}`;
   const j = await apiFetch('POST', url, '');
-  if (j.success) { showToast(`📁 已创建`); refreshCurrent(); refreshTree(); }
+  if (j?.success) { showToast(`📁 已创建`); refreshCurrent(); refreshTree(); }
   else showToast(`❌ ${j.error}`, true);
 }
 
@@ -446,7 +447,7 @@ async function submitRename() {
   if (!newName || !renameTarget) return;
   closeModal('renameModal');
   const j = await apiFetch('PUT', `/api/v2/files/${renameTarget}`, JSON.stringify({name: newName}));
-  if (j.success) { showToast('✅ 已重命名'); refreshCurrent(); refreshTree(); }
+  if (j?.success) { showToast('✅ 已重命名'); refreshCurrent(); refreshTree(); }
   else showToast(`❌ ${j.error}`, true);
   renameTarget = null;
 }
@@ -457,7 +458,7 @@ function confirmDelete(uuid, name) {
   document.getElementById('confirmBtn').onclick = async () => {
     closeModal('confirmModal');
     const j = await apiFetch('DELETE', `/api/v2/files/${uuid}`);
-    if (j.success) { showToast(`🗑 已删除`); refreshCurrent(); refreshTree(); }
+    if (j?.success) { showToast(`🗑 已删除`); refreshCurrent(); refreshTree(); }
     else showToast(`❌ ${j.error}`, true);
   };
   document.getElementById('confirmModal').classList.add('active');
@@ -488,7 +489,7 @@ async function batchDelete() {
   const uuids = Array.from(selectedUuids);
   const j = await apiFetch('POST', '/api/v2/files/batch/delete', JSON.stringify({uuids}));
   if (!j) { showToast('❌ 请求失败（密钥可能无效）', true); return; }
-  if (j.success) { showToast(`🗑 已删除 ${j.data?.deleted?.length || 0} 项`); selectedUuids.clear(); updateSelUI(); refreshCurrent(); refreshTree(); }
+  if (j?.success) { showToast(`🗑 已删除 ${j.data?.deleted?.length || 0} 项`); selectedUuids.clear(); updateSelUI(); refreshCurrent(); refreshTree(); }
   else showToast(`❌ 删除失败: ${j.error}`, true);
 }
 let moveCopyAction = 'move';
@@ -533,7 +534,7 @@ async function pickDir(uuid) {
   try {
     const j = await apiFetch('POST', endpoint, JSON.stringify({uuids, target_parent: targetUuid}));
     if (!j) { showToast(`❌ ${actName}失败（请求未响应）`, true); return; }
-    if (j.success) {
+    if (j?.success) {
       showToast(`✅ ${actName}完成: ${(j.data?.[moveCopyAction === 'move' ? 'moved' : 'copied'] || []).length} 项`);
       selectedUuids.clear(); updateSelUI();
       refreshCurrent(); refreshTree();

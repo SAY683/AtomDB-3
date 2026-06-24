@@ -3,6 +3,8 @@ use deadpool_redis::redis::AsyncCommands;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use Static::Events;
+use Error::ThreadEvents;
+use anyhow::anyhow;
 use crate::setting::database_config::{Database, Service};
 use crate::setting::local_config::{SUPER_DLR_URL, SUPER_URL};
 use crate::sql_url::OrmEX;
@@ -27,9 +29,11 @@ pub async fn build_redis() -> Events<()> {
             mode: xv.mode,
         }).unwrap();
         if time > 0 {
-            cmd.set_ex::<_, _, bool>(i.uuid, bir, time as u64).await.unwrap();
+            cmd.set_ex::<_, _, bool>(i.uuid, bir, time as u64).await
+                .map_err(|e| ThreadEvents::UnknownError(anyhow::anyhow!("Redis 写入失败: {}", e)))?;
         } else {
-            cmd.set::<_, _, bool>(i.uuid, bir).await.unwrap();
+            cmd.set::<_, _, bool>(i.uuid, bir).await
+                .map_err(|e| ThreadEvents::UnknownError(anyhow::anyhow!("Redis 写入失败: {}", e)))?;
         }
     }
     Ok(())

@@ -20,7 +20,7 @@ use crate::sql_url::{OrmEX, Url};
 ///# 全局数据库连接池（单例，应用生命周期内复用）
 static GLOBAL_DB: OnceCell<RBatis> = OnceCell::new();
 
-async fn get_global_db() -> Events<&'static RBatis> {
+pub async fn get_global_db() -> Events<&'static RBatis> {
     match GLOBAL_DB.get() {
         Some(rb) => Ok(rb),
         None => {

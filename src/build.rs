@@ -80,11 +80,6 @@ pub async fn init(mut e: Overmaster) -> Events<()> {
         }
 
         'life: loop {
-            // 如果检测到非交互终端，自动退出菜单循环
-            if std::env::var("ATOMDB_HEADLESS").as_deref() == Ok("true") {
-                println!("[AtomDB] 非交互环境，跳过菜单");
-                break 'life;
-            }
             let index = vec![ORD1, ORD3, ORD4, ORD2];
             let choice = match Colour::select_func_column(&index, OUT_LOG_1) {
                 Ok(i) => i,

@@ -8,30 +8,16 @@
 
 use actix_web::{HttpRequest, HttpResponse, Responder, web};
 use actix_web::http::header;
-use once_cell::sync::OnceCell;
-use rbatis::RBatis;
 use serde::Serialize;
 use uuid::Uuid;
 use Static::{Events, LOCAL_DB};
-use Error::ThreadEvents;
-use crate::sql_url::OrmEX;
 use crate::setting::database_config::{FileNode, FileSymlink, ApiKey};
-use crate::setting::local_config::SUPER_DLR_URL;
 
 // ======================== 全局状态 ========================
 
-static VFS_DB: OnceCell<RBatis> = OnceCell::new();
-
-async fn get_vfs_db() -> Events<&'static RBatis> {
-    match VFS_DB.get() {
-        Some(rb) => Ok(rb),
-        None => {
-            let rb = crate::setting::local_config::SUPER_URL.load().postgres.connect_bdc().await?;
-            VFS_DB.set(rb)
-                .map_err(|_| ThreadEvents::UnknownError(anyhow::anyhow!("VFS DB 已初始化")))?;
-            Ok(VFS_DB.get().unwrap())
-        }
-    }
+// 复用 web.rs 的全局连接池（避免创建第二个 RBatis 连接池）
+async fn get_vfs_db() -> Events<&'static rbatis::RBatis> {
+    crate::web::get_global_db().await
 }
 
 // ======================== 认证系统 ========================
