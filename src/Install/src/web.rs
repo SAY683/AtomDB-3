@@ -10,7 +10,7 @@ use rbatis::RBatis;
 use redis::Commands;
 use serde::Serialize;
 use uuid::Uuid;
-use Static::{Alexia, Events};
+use Static::{Alexia, Events, LOCAL_DB};
 use Static::alex::Overmaster;
 use Static::base::FutureEx;
 use Error::ThreadEvents;
@@ -280,16 +280,15 @@ async fn download_file(filename: &str) -> Events<Vec<u8>> {
 
     for db_rec in &databases {
         if let Some(svc) = services.iter().find(|s| s.uuid == db_rec.uuid) {
-            let kv = KVStore {
-                hash: None,
-                key: Some(svc.uuid.clone()),
-                value: String::new(),
-            };
-            let data = kv.read().await;
+            // 直接使用 cacache API 避免 Disk trait 的 .expect() panic
+            let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+            let data = cacache::read(&cache_dir, &svc.uuid).await
+                .map_err(|e| ThreadEvents::UnknownError(
+                    anyhow::anyhow!("缓存读取失败 (uuid={}): {}", &svc.uuid, e)))?;
             return Ok(data);
         }
     }
-    Err(ThreadEvents::UnknownError(anyhow::anyhow!("文件 \"{}\" 数据为空", filename)))
+    Err(ThreadEvents::UnknownError(anyhow::anyhow!("文件 \"{}\" 未找到", filename)))
 }
 
 // ======================== API: 创建数据库 ========================
