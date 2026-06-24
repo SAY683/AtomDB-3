@@ -6,15 +6,9 @@
 <title>AtomDB 管理面板</title>
 <style>
   :root {
-    --bg: #0d1117;
-    --card: #161b22;
-    --border: #30363d;
-    --text: #e6edf3;
-    --muted: #8b949e;
-    --accent: #58a6ff;
-    --green: #3fb950;
-    --red: #f85149;
-    --yellow: #d29922;
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -24,6 +18,7 @@
   .container { max-width: 1200px; margin: 0 auto; }
   header {
     display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 12px;
     padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px;
   }
   h1 { font-size: 24px; font-weight: 600; }
@@ -38,18 +33,25 @@
   .toolbar {
     display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
   }
-  input, button {
+  input, button, .file-btn {
     padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border);
     background: var(--card); color: var(--text); font-size: 14px;
   }
   input { flex: 1; min-width: 200px; }
   input:focus { outline: none; border-color: var(--accent); }
-  button {
+  button, .file-btn {
     cursor: pointer; transition: all 0.2s; white-space: nowrap;
   }
   button:hover { background: #1c2333; border-color: var(--accent); }
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   button.primary:hover { background: #79c0ff; }
+  button.danger { background: var(--red); color: #fff; border-color: var(--red); }
+  button.danger:hover { background: #ff6b63; }
+  .file-btn {
+    display: inline-block; text-align: center;
+  }
+  .file-btn:hover { background: #1c2333; border-color: var(--accent); }
+  input[type="file"] { display: none; }
   .stats {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 12px; margin-bottom: 20px;
@@ -67,20 +69,53 @@
   th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
   th { font-size: 12px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
   tr:hover td { background: rgba(88,166,255,0.04); }
-  .uuid { font-family: monospace; font-size: 12px; color: var(--muted); }
-  .actions { display: flex; gap: 8px; }
-  .actions a {
-    color: var(--accent); text-decoration: none; font-size: 13px;
+  .uuid { font-family: monospace; font-size: 12px; color: var(--muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .actions a, .actions button {
+    color: var(--accent); text-decoration: none; font-size: 13px; background: none;
+    border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;
   }
-  .actions a:hover { text-decoration: underline; }
-  .empty {
-    text-align: center; padding: 48px; color: var(--muted);
+  .actions button:hover { background: rgba(88,166,255,0.1); }
+  .actions .del-btn { color: var(--red); }
+  .actions .del-btn:hover { background: rgba(248,81,73,0.1); }
+  .empty { text-align: center; padding: 48px; color: var(--muted); }
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6); z-index: 1000;
+    justify-content: center; align-items: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; max-width: 500px; width: 90%;
+  }
+  .modal h2 { margin-bottom: 16px; font-size: 18px; }
+  .modal input { width: 100%; margin-bottom: 12px; }
+  .modal .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  /* Upload progress */
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: 8px;
+    padding: 24px; text-align: center; margin-bottom: 16px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent); background: rgba(88,166,255,0.04);
+  }
+  .upload-zone .hint { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .progress-bar {
+    height: 4px; background: var(--border); border-radius: 2px;
+    margin-top: 8px; overflow: hidden; display: none;
+  }
+  .progress-bar .fill {
+    height: 100%; background: var(--accent); width: 0%;
+    transition: width 0.3s;
   }
   .toast {
-    position: fixed; bottom: 24px; right: 24px;
+    position: fixed; bottom: 24px; right: 24px; z-index: 2000;
     padding: 12px 20px; border-radius: 8px; background: var(--card);
     border: 1px solid var(--border); font-size: 14px;
-    display: none; animation: fadeIn 0.3s;
+    display: none; animation: fadeIn 0.3s; max-width: 400px;
   }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; } }
   .spinner {
@@ -91,27 +126,38 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 768px) {
     th, td { padding: 8px 10px; font-size: 13px; }
+    .uuid { max-width: 100px; }
   }
 </style>
 </head>
 <body>
 <div class="container">
   <header>
-    <h1><span>Atom</span>DB 管理面板</h1>
-    <div>
+    <h1><span>Atom</span>DB <small style="font-weight:400;color:var(--muted);font-size:14px">管理面板</small></h1>
+    <div style="display:flex;gap:8px;align-items:center">
       <span class="badge ok" id="healthBadge">检查中…</span>
     </div>
   </header>
 
   <div class="stats">
-    <div class="stat-card"><div class="num" id="totalCount">-</div><div class="label">数据库总数</div></div>
-    <div class="stat-card"><div class="num" id="hashedCount">-</div><div class="label">已缓存</div></div>
+    <div class="stat-card"><div class="num" id="totalCount">-</div><div class="label">数据库 / 文件</div></div>
+    <div class="stat-card"><div class="num" id="uploadedCount">-</div><div class="label">已上传</div></div>
     <div class="stat-card"><div class="num" id="healthyCount">-</div><div class="label">健康</div></div>
   </div>
+
+  <!-- Upload Zone -->
+  <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+    <div style="font-size:32px;margin-bottom:8px">📁</div>
+    <div><strong>点击选择文件</strong> 或拖拽文件到此处</div>
+    <div class="hint">支持任意类型，单文件最大 100MB</div>
+    <div class="progress-bar" id="progressBar"><div class="fill" id="progressFill"></div></div>
+  </div>
+  <input type="file" id="fileInput" onchange="uploadFile(this.files[0])">
 
   <div class="toolbar">
     <input type="text" id="searchInput" placeholder="搜索名称 / UUID / 端口…" oninput="filterTable()">
     <button onclick="refreshData()">⟳ 刷新</button>
+    <button class="primary" onclick="showAddModal()">＋ 新建</button>
   </div>
 
   <table>
@@ -122,7 +168,7 @@
         <th>Hash</th>
         <th>端口</th>
         <th>缓存</th>
-        <th>操作</th>
+        <th style="text-align:center">操作</th>
       </tr>
     </thead>
     <tbody id="tableBody">
@@ -131,55 +177,75 @@
   </table>
 </div>
 
+<!-- Add Modal -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <h2>新建数据库记录</h2>
+    <input type="text" id="newName" placeholder="名称 (必填)">
+    <input type="text" id="newPort" placeholder="端口 (默认 127.0.0.1:8964)" value="127.0.0.1:8964">
+    <input type="text" id="newHash" placeholder="Hash (可选)">
+    <div class="btn-row">
+      <button onclick="closeAddModal()">取消</button>
+      <button class="primary" onclick="submitAdd()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-overlay" id="delModal">
+  <div class="modal">
+    <h2>确认删除</h2>
+    <p id="delMsg" style="margin-bottom:16px;color:var(--muted)"></p>
+    <div class="btn-row">
+      <button onclick="closeDelModal()">取消</button>
+      <button class="danger" id="delConfirmBtn">删除</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 let allData = [];
+let delTarget = null;
 
 async function refreshData() {
   const tb = document.getElementById('tableBody');
-  tb.innerHTML = '<tr><td colspan="6" class="empty"><span class="spinner"></span> 加载中…</td></tr>';
+  const healthBadge = document.getElementById('healthBadge');
 
   try {
-    // 健康检查
-    const healthRes = await fetch('/health');
-    const health = await healthRes.json();
-    const badge = document.getElementById('healthBadge');
-    if (health.success && health.data?.status === 'healthy') {
-      badge.className = 'badge ok';
-      badge.textContent = '● 服务正常';
+    const h = await (await fetch('/health')).json();
+    if (h.success && h.data?.status === 'healthy') {
+      healthBadge.className = 'badge ok'; healthBadge.textContent = '● 正常';
     } else {
-      badge.className = 'badge warn';
-      badge.textContent = '● 降级运行';
+      healthBadge.className = 'badge warn'; healthBadge.textContent = '⚠ 降级';
     }
+  } catch { healthBadge.className = 'badge err'; healthBadge.textContent = '✗ 异常'; }
 
-    // 数据库列表
+  try {
     const res = await fetch('/api/v1/databases');
     const json = await res.json();
     if (!json.success) throw new Error(json.error);
     allData = json.data || [];
 
-    // 统计
     document.getElementById('totalCount').textContent = allData.length;
-    document.getElementById('hashedCount').textContent = allData.filter(d => d.cache === 'hit').length;
+    document.getElementById('uploadedCount').textContent = allData.filter(d => d.hash && d.hash !== '').length;
     document.getElementById('healthyCount').textContent = allData.filter(d => d.hash?.length > 0).length;
-
     filterTable();
   } catch (e) {
-    tb.innerHTML = `<tr><td colspan="6" class="empty">⚠️ 加载失败: ${e.message}</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="6" class="empty">⚠ 加载失败: ${esc(e.message)}</td></tr>`;
     showToast('加载失败: ' + e.message, true);
   }
 }
 
 function filterTable() {
   const q = document.getElementById('searchInput').value.toLowerCase();
-  const filtered = allData.filter(d =>
+  renderTable(allData.filter(d =>
     d.name?.toLowerCase().includes(q) ||
     d.uuid?.toLowerCase().includes(q) ||
     d.port?.includes(q) ||
     d.hash?.toLowerCase().includes(q)
-  );
-  renderTable(filtered);
+  ));
 }
 
 function renderTable(data) {
@@ -191,37 +257,125 @@ function renderTable(data) {
   tb.innerHTML = data.map(d => {
     const cacheLabel = d.cache === 'hit'
       ? '<span class="badge ok">已缓存</span>'
-      : '<span class="badge warn">未缓存</span>';
+      : '<span class="badge warn">磁盘</span>';
     return `<tr>
       <td><strong>${esc(d.name)}</strong></td>
-      <td class="uuid">${esc(d.uuid)}</td>
-      <td class="uuid">${esc(d.hash?.slice(0, 24))}…</td>
+      <td class="uuid" title="${esc(d.uuid)}">${esc(d.uuid.slice(0, 8))}…</td>
+      <td class="uuid" title="${esc(d.hash)}">${esc(d.hash?.slice(0, 16) || '-')}…</td>
       <td>${esc(d.port)}</td>
       <td>${cacheLabel}</td>
-      <td class="actions">
-        <a href="/dl/${encodeURIComponent(d.name)}" target="_blank">下载</a>
+      <td class="actions" style="justify-content:center">
+        <a href="/dl/${encodeURIComponent(d.name)}" target="_blank" title="下载">⬇</a>
+        <button class="del-btn" onclick="confirmDelete('${esc(d.uuid)}', '${esc(d.name)}')" title="删除">✕</button>
       </td>
     </tr>`;
   }).join('');
 }
 
-function esc(s) {
-  const div = document.createElement('div');
-  div.textContent = s || '';
-  return div.innerHTML;
+// ---- Upload ----
+document.getElementById('uploadZone').addEventListener('dragover', e => {
+  e.preventDefault(); e.currentTarget.classList.add('dragover');
+});
+document.getElementById('uploadZone').addEventListener('dragleave', e => {
+  e.currentTarget.classList.remove('dragover');
+});
+document.getElementById('uploadZone').addEventListener('drop', e => {
+  e.preventDefault(); e.currentTarget.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) uploadFile(file);
+});
+
+async function uploadFile(file) {
+  if (!file) return;
+  const bar = document.getElementById('progressBar');
+  const fill = document.getElementById('progressFill');
+  bar.style.display = 'block'; fill.style.width = '0%';
+  showToast(`上传中: ${file.name} (${(file.size / 1024).toFixed(1)}KB)…`);
+
+  try {
+    const res = await fetch(`/api/v1/upload?name=${encodeURIComponent(file.name)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+    const json = await res.json();
+    fill.style.width = '100%';
+    if (json.success) {
+      showToast(`✅ ${file.name} 上传成功`, false);
+      setTimeout(refreshData, 500);
+    } else {
+      showToast(`❌ 上传失败: ${json.error}`, true);
+    }
+  } catch (e) {
+    showToast(`❌ 上传异常: ${e.message}`, true);
+  }
+  setTimeout(() => { bar.style.display = 'none'; fill.style.width = '0%'; }, 1500);
 }
 
+// ---- Add ----
+function showAddModal() { document.getElementById('addModal').classList.add('active'); }
+function closeAddModal() { document.getElementById('addModal').classList.remove('active'); }
+
+async function submitAdd() {
+  const name = document.getElementById('newName').value.trim();
+  const port = document.getElementById('newPort').value.trim();
+  const hash = document.getElementById('newHash').value.trim();
+  if (!name) { showToast('名称不能为空', true); return; }
+
+  try {
+    const res = await fetch('/api/v1/databases', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, port, hash: hash || undefined }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      showToast(`✅ 已创建: ${name}`, false);
+      closeAddModal();
+      document.getElementById('newName').value = '';
+      document.getElementById('newHash').value = '';
+      refreshData();
+    } else {
+      showToast(`❌ 创建失败: ${json.error}`, true);
+    }
+  } catch (e) { showToast(`❌ ${e.message}`, true); }
+}
+
+// ---- Delete ----
+function confirmDelete(uuid, name) {
+  delTarget = { uuid, name };
+  document.getElementById('delMsg').textContent = `确定要删除 "${name}" (${uuid.slice(0,8)}…) 吗？此操作不可恢复。`;
+  document.getElementById('delConfirmBtn').onclick = executeDelete;
+  document.getElementById('delModal').classList.add('active');
+}
+function closeDelModal() { document.getElementById('delModal').classList.remove('active'); delTarget = null; }
+
+async function executeDelete() {
+  if (!delTarget) return;
+  const { uuid, name } = delTarget;
+  closeDelModal();
+  try {
+    const res = await fetch(`/api/v1/databases/${uuid}`, { method: 'DELETE' });
+    const json = await res.json();
+    if (json.success) {
+      showToast(`🗑 已删除: ${name}`, false);
+      refreshData();
+    } else {
+      showToast(`❌ 删除失败: ${json.error}`, true);
+    }
+  } catch (e) { showToast(`❌ ${e.message}`, true); }
+}
+
+// ---- Utils ----
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 function showToast(msg, isError) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
+  t.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg);
   t.style.borderColor = isError ? 'var(--red)' : 'var(--green)';
   t.style.display = 'block';
-  setTimeout(() => { t.style.display = 'none'; }, 3500);
+  setTimeout(() => { t.style.display = 'none'; }, 4000);
 }
 
-// 自动加载
+// Auto load
 refreshData();
-// 每 30 秒自动刷新
 setInterval(refreshData, 30000);
 </script>
 </body>

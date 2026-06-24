@@ -8,7 +8,8 @@ use once_cell::sync::OnceCell;
 use rayon::prelude::*;
 use rbatis::RBatis;
 use redis::Commands;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use Static::{Alexia, Events};
 use Static::alex::Overmaster;
 use Static::base::FutureEx;
@@ -70,6 +71,8 @@ pub async fn web() -> Events<Server> {
     let databases = Database::select_by_map(&conn, rbs::value!{}).await?;
     drop(conn);
 
+    let max_payload = 100 * 1024 * 1024; // 100MB
+
     let mut sup = HttpServer::new(move || {
         let cors = Cors::default()
             .allow_any_origin()
@@ -79,12 +82,20 @@ pub async fn web() -> Events<Server> {
 
         App::new()
             .wrap(cors)
+            .app_data(web::PayloadConfig::new(max_payload))
             // 页面路由
             .route("/", web::get().to(dashboard))
             .route(SUPER_DLR_URL.load().path.as_str(), web::get().to(dashboard))
-            // API v1
+            // API v1 — 查询
             .route("/api/v1/databases", web::get().to(api_list_databases))
             .route("/api/v1/databases/{uuid}", web::get().to(api_database_detail))
+            // API v1 — 增删改
+            .route("/api/v1/databases", web::post().to(api_create_database))
+            .route("/api/v1/databases/{uuid}", web::put().to(api_update_database))
+            .route("/api/v1/databases/{uuid}", web::delete().to(api_delete_database))
+            // API v1 — 文件上传/删除
+            .route("/api/v1/upload", web::post().to(api_upload_file))
+            .route("/api/v1/files/{uuid}", web::delete().to(api_delete_file))
             // 系统
             .route("/health", web::get().to(health))
             // 下载
@@ -266,6 +277,208 @@ async fn download_file(filename: &str) -> Events<Vec<u8>> {
         }
     }
     Err(ThreadEvents::UnknownError(anyhow::anyhow!("文件 \"{}\" 数据为空", filename)))
+}
+
+// ======================== API: 创建数据库 ========================
+
+#[derive(serde::Deserialize)]
+struct CreateDbRequest {
+    name: String,
+    hash: Option<String>,
+    port: String,
+}
+
+async fn api_create_database(body: web::Json<CreateDbRequest>) -> impl Responder {
+    let rb = match get_global_db().await {
+        Ok(rb) => rb,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 未就绪: {}", e)),
+    };
+    let conn = match rb.acquire().await {
+        Ok(c) => c,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 连接失败: {}", e)),
+    };
+    let uuid = Uuid::new_v4().to_string();
+    let db = Database {
+        uuid: uuid.clone(),
+        name: body.name.clone(),
+        hash: body.hash.clone().unwrap_or_default(),
+        port: body.port.clone(),
+    };
+    match Database::insert(&conn, &db).await {
+        Ok(_) => json_ok(serde_json::json!({"uuid": uuid, "name": body.name})),
+        Err(e) => json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("创建失败: {}", e)),
+    }
+}
+
+// ======================== API: 更新数据库 ========================
+
+#[derive(serde::Deserialize)]
+struct UpdateDbRequest {
+    name: Option<String>,
+    hash: Option<String>,
+    port: Option<String>,
+}
+
+async fn api_update_database(path: web::Path<String>, body: web::Json<UpdateDbRequest>) -> impl Responder {
+    let uuid = path.into_inner();
+    let rb = match get_global_db().await {
+        Ok(rb) => rb,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 未就绪: {}", e)),
+    };
+    let conn = match rb.acquire().await {
+        Ok(c) => c,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 连接失败: {}", e)),
+    };
+    // 先用 select_by_map 检查记录是否存在
+    let existing = match Database::select_by_map(&conn, rbs::value!{"uuid": &uuid}).await {
+        Ok(d) => d,
+        Err(e) => return json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("查询失败: {}", e)),
+    };
+    if existing.is_empty() {
+        return json_err(actix_web::http::StatusCode::NOT_FOUND, "数据库未找到");
+    }
+    let current = &existing[0];
+    let updated = Database {
+        uuid: uuid.clone(),
+        name: body.name.clone().unwrap_or_else(|| current.name.clone()),
+        hash: body.hash.clone().unwrap_or_else(|| current.hash.clone()),
+        port: body.port.clone().unwrap_or_else(|| current.port.clone()),
+    };
+    // rbatis crud! 没有直接的 update_by_id, 用 delete + insert 模拟
+    if let Err(e) = Database::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await {
+        return json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("删除旧记录失败: {}", e));
+    }
+    match Database::insert(&conn, &updated).await {
+        Ok(_) => json_ok(serde_json::json!({"uuid": uuid, "name": updated.name})),
+        Err(e) => json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("更新失败: {}", e)),
+    }
+}
+
+// ======================== API: 删除数据库 ========================
+
+async fn api_delete_database(path: web::Path<String>) -> impl Responder {
+    let uuid = path.into_inner();
+    let rb = match get_global_db().await {
+        Ok(rb) => rb,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 未就绪: {}", e)),
+    };
+    let conn = match rb.acquire().await {
+        Ok(c) => c,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 连接失败: {}", e)),
+    };
+
+    // 先尝试从 cacache 删除数据（忽略错误）
+    let kv = KVStore {
+        hash: None,
+        key: Some(uuid.clone()),
+        value: String::new(),
+    };
+    kv.remove().await;
+
+    // 删除 service 记录
+    let _ = Service::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await;
+    // 删除 database 记录
+    match Database::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await {
+        Ok(r) if r.rows_affected > 0 => json_ok(serde_json::json!({"deleted": uuid})),
+        Ok(_) => json_err(actix_web::http::StatusCode::NOT_FOUND, "数据库未找到"),
+        Err(e) => json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("删除失败: {}", e)),
+    }
+}
+
+// ======================== API: 上传文件 ========================
+
+async fn api_upload_file(
+    query: web::Query<std::collections::HashMap<String, String>>,
+    body: web::Bytes,
+) -> impl Responder {
+    let name = match query.get("name").filter(|n| !n.is_empty()) {
+        Some(n) => n.clone(),
+        None => return json_err(actix_web::http::StatusCode::BAD_REQUEST, "缺少 ?name= 参数"),
+    };
+
+    if body.is_empty() {
+        return json_err(actix_web::http::StatusCode::BAD_REQUEST, "文件内容为空");
+    }
+
+    let rb = match get_global_db().await {
+        Ok(rb) => rb,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 未就绪: {}", e)),
+    };
+    let conn = match rb.acquire().await {
+        Ok(c) => c,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 连接失败: {}", e)),
+    };
+
+    let uuid = Uuid::new_v4();
+    let uuid_str = uuid.to_string();
+    // 构造临时 KVStore 并写入 cacache（key 用 uuid_str 满足 AsRef<str>）
+    let temp_kv = KVStore {
+        hash: None,
+        key: Some(uuid_str.clone()),
+        value: body.to_vec(),
+    };
+    let integrity = temp_kv.hash_write().await;
+    let hash_str = integrity.to_string();
+    let def_port = SUPER_DLR_URL.load().port.to_string();
+
+    // 写入 PgSQL
+    let db_rec = Database {
+        uuid: uuid_str.clone(),
+        name: name.clone(),
+        hash: hash_str,
+        port: def_port,
+    };
+    let svc_rec = Service {
+        uuid: uuid_str.clone(),
+        name: name.clone(),
+        logs: Some(format!("uploaded at {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"))),
+        mode: "HASH".to_string(),
+    };
+
+    if let Err(e) = Database::insert(&conn, &db_rec).await {
+        return json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("数据库记录创建失败: {}", e));
+    }
+    if let Err(e) = Service::insert(&conn, &svc_rec).await {
+        return json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("服务记录创建失败: {}", e));
+    }
+
+    json_ok(serde_json::json!({
+        "uuid": uuid_str,
+        "name": name,
+        "hash": integrity.to_string(),
+        "size": body.len(),
+    }))
+}
+
+// ======================== API: 删除文件 ========================
+
+async fn api_delete_file(path: web::Path<String>) -> impl Responder {
+    let uuid = path.into_inner();
+    let rb = match get_global_db().await {
+        Ok(rb) => rb,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 未就绪: {}", e)),
+    };
+    let conn = match rb.acquire().await {
+        Ok(c) => c,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 连接失败: {}", e)),
+    };
+
+    // 从 PgSQL 删除
+    let _ = Service::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await;
+    match Database::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await {
+        Ok(r) if r.rows_affected > 0 => {
+            // 从 cacache 删除数据
+            let kv = KVStore {
+                hash: None,
+                key: Some(uuid.clone()),
+                value: String::new(),
+            };
+            kv.remove().await;
+            json_ok(serde_json::json!({"deleted": uuid}))
+        }
+        Ok(_) => json_err(actix_web::http::StatusCode::NOT_FOUND, "文件未找到"),
+        Err(e) => json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("删除失败: {}", e)),
+    }
 }
 
 // ======================== 旧路由兼容 ========================

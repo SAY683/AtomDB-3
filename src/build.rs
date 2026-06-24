@@ -72,19 +72,37 @@ pub async fn init(mut e: Overmaster) -> Events<()> {
             *e.deref().0.lock() = true;
             e.1.notify_all();
         }
+
+        // 环境变量 ATOMDB_HEADLESS=true 时跳过交互菜单，直接启动 Web
+        if std::env::var("ATOMDB_HEADLESS").as_deref() == Ok("true") {
+            println!("[AtomDB] 无头模式: 跳过菜单，Web 服务器将自动启动");
+            return Ok(());
+        }
+
         'life: loop {
+            // 如果检测到非交互终端，自动退出菜单循环
+            if std::env::var("ATOMDB_HEADLESS").as_deref() == Ok("true") {
+                println!("[AtomDB] 非交互环境，跳过菜单");
+                break 'life;
+            }
             let index = vec![ORD1, ORD3, ORD4, ORD2];
             let choice = match Colour::select_func_column(&index, OUT_LOG_1) {
                 Ok(i) => i,
-                Err(_) => continue,
+                Err(_) => {
+                    println!("[AtomDB] 检测到非交互终端，启动无头模式 (设置 ATOMDB_HEADLESS=true)");
+                    break 'life;
+                }
             };
             match index[choice] {
                 ORD1 => {
                     //写入
+                    println!("[AtomDB] 开始写入任务…");
                     DiskWrite::alliance(DiskWrite::aggregation()).await?;
+                    println!("[AtomDB] 写入完成");
                 }
                 ORD3 => {
                     let xx = format!("http:{}{}", SUPER_DLR_URL.load().port, SUPER_DLR_URL.load().path);
+                    println!("[AtomDB] 管理面板: {}", xx);
                     if SUPER_DLR_URL.load().auto {
                         opener::open(xx).unwrap_or_else(|e| {
                             eprintln!("{}", e);
@@ -92,7 +110,11 @@ pub async fn init(mut e: Overmaster) -> Events<()> {
                     }
                 }
                 ORD4 => {
-                    build_redis().await?;
+                    println!("[AtomDB] Redis 缓存同步…");
+                    match build_redis().await {
+                        Ok(_) => println!("[AtomDB] Redis 同步完成"),
+                        Err(e) => eprintln!("[AtomDB] Redis 同步失败 (可忽略): {:?}", e),
+                    }
                 }
                 ORD2 => {
                     //结束
@@ -100,7 +122,7 @@ pub async fn init(mut e: Overmaster) -> Events<()> {
                     break 'life;
                 }
                 e => {
-                    println!("[{}]不存在", e);
+                    println!("[AtomDB] 未知选项: {}", e);
                 }
             }
         }
