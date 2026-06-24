@@ -62,7 +62,8 @@ pub async fn cache(mut e: Overmaster) -> Events<()> {
 pub async fn init(mut e: Overmaster) -> Events<()> {
     //日志设置
     if let true = SUPER_DLR_URL.deref().load().view {
-        fast_log::init(Config::new().level(LevelFilter::Debug).file(LOCAL_BIN_LOGS.as_path().to_str().unwrap()).console())?;
+        let log_path = LOCAL_BIN_LOGS.as_path().to_str().map(|s| s.to_string()).unwrap_or_else(|| "atomic.log".to_string());
+        fast_log::init(Config::new().level(LevelFilter::Debug).file(&log_path).console())?;
     }
     if db_build().await? {
         log_info();
@@ -73,7 +74,11 @@ pub async fn init(mut e: Overmaster) -> Events<()> {
         }
         'life: loop {
             let index = vec![ORD1, ORD3, ORD4, ORD2];
-            match index[Colour::select_func_column(&index, OUT_LOG_1).unwrap()] {
+            let choice = match Colour::select_func_column(&index, OUT_LOG_1) {
+                Ok(i) => i,
+                Err(_) => continue,
+            };
+            match index[choice] {
                 ORD1 => {
                     //写入
                     DiskWrite::alliance(DiskWrite::aggregation()).await?;

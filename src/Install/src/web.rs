@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use Static::{Alexia, Events};
 use Static::alex::Overmaster;
 use Static::base::FutureEx;
+use Error::ThreadEvents;
 use crate::io::{Disk, KVStore};
-use crate::LOCAL_DEF_DB;
 use crate::rei::Response;
 use crate::setting::database_config::{Database, Service};
 use crate::setting::local_config::{SUPER_DLR_URL, SUPER_URL};
@@ -31,9 +31,10 @@ impl Alexia<Websocket> for Websocket {
 }
 
 pub async fn web() -> Events<Server> {
-    let mut x = SUPER_URL.load().postgres.connect_bdc().await.unwrap();
+    let mut x = SUPER_URL.load().postgres.connect_bdc().await?;
     let conn = x.acquire().await?;
     let erx = Database::select_by_map(&conn, rbs::value!{}).await?;
+    drop(conn);
     let mut sup = HttpServer::new(|| {
         let mut ddc = App::new();
         ddc = ddc.route(SUPER_DLR_URL.load().path.as_str(), web::get().to(index));
@@ -41,21 +42,32 @@ pub async fn web() -> Events<Server> {
         ddc
     });
     for e in erx {
-        sup = sup.bind(e.port).unwrap();
+        sup = sup.bind(e.port)?;
     }
     Ok(sup.bind(SUPER_DLR_URL.load().port)?.run())
 }
 
 #[get("/{filename}")]
 async fn download(filename: String) -> impl Responder {
-    let mut eg = SUPER_URL.load().postgres.connect_bdc().await.unwrap();
-    let conn = eg.acquire().await.unwrap();
-    let erx = Database::select_by_map(&conn, rbs::value!{"name": &filename}).await.unwrap();
-    let er = Service::select_by_map(&conn, rbs::value!{"name": &filename}).await.unwrap();
+    let result = download_inner(&filename).await;
+    match result {
+        Ok(data) => HttpResponse::Ok().content_type("application/octet-stream").body(data),
+        Err(e) => {
+            eprintln!("下载失败: {:?}", e);
+            HttpResponse::NotFound().body(format!("文件未找到: {}", filename))
+        }
+    }
+}
+
+async fn download_inner(filename: &str) -> Events<Vec<u8>> {
+    let mut eg = SUPER_URL.load().postgres.connect_bdc().await?;
+    let conn = eg.acquire().await?;
+    let erx = Database::select_by_map(&conn, rbs::value!{"name": filename}).await?;
+    let er = Service::select_by_map(&conn, rbs::value!{"name": filename}).await?;
     let mut bit = vec![];
-    for erx in erx {
+    for db_rec in erx {
         let xd = er.clone().into_par_iter().find_any(|e| {
-            erx.uuid == e.uuid
+            db_rec.uuid == e.uuid
         }).map(|e| {
             KVStore {
                 hash: None,
@@ -67,7 +79,7 @@ async fn download(filename: String) -> impl Responder {
             bit.push(e.read().await);
         }
     };
-    HttpResponse::Ok().content_type("application/octet-stream").body(bit[0].to_vec())
+    bit.first().cloned().ok_or_else(|| ThreadEvents::UnknownError(anyhow::anyhow!("文件数据为空")))
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -78,14 +90,57 @@ struct MysqlESR {
 }
 
 async fn index() -> impl Responder {
-    let mut eg = SUPER_URL.load().postgres.connect_bdc().await.unwrap();
-    let conn = eg.acquire().await.unwrap();
-    let xe = Database::select_by_map(&conn, rbs::value!{}).await.unwrap();
-    let mut med = vec![];
-    let mut nc = SUPER_URL.deref().load().redis.redis_connection_async().await.unwrap();
-    for e in xe.into_iter() {
-        let xx = nc.get::<_, String>(e.uuid).unwrap();
-        med.push(serde_json::from_str::<Response>(xx.as_str()).unwrap())
+    let result = index_inner().await;
+    match result {
+        Ok(data) => HttpResponse::Ok().json(data),
+        Err(e) => {
+            eprintln!("列表查询失败: {:?}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "查询失败",
+                "detail": format!("{}", e)
+            }))
+        }
     }
-    HttpResponse::Ok().json(med)
+}
+
+async fn index_inner() -> Events<Vec<serde_json::Value>> {
+    let mut eg = SUPER_URL.load().postgres.connect_bdc().await?;
+    let conn = eg.acquire().await?;
+    let xe = Database::select_by_map(&conn, rbs::value!{}).await?;
+    drop(conn);
+
+    // Redis 为可选依赖，不可用时返回空列表
+    let nc = match SUPER_URL.deref().load().redis.redis_connection_async().await {
+        Ok(client) => Some(client),
+        Err(_) => {
+            eprintln!("Redis 不可用，返回数据库列表作为降级");
+            return Ok(xe.into_iter().map(|e| {
+                serde_json::json!({
+                    "uuid": e.uuid,
+                    "name": e.name,
+                    "hash": e.hash,
+                    "port": e.port,
+                    "cache": "unavailable"
+                })
+            }).collect());
+        }
+    };
+
+    let mut nc = nc.unwrap();
+    let mut med = vec![];
+    for e in xe.into_iter() {
+        let uuid = e.uuid.clone();
+        match nc.get::<_, String>(&uuid).ok() {
+            Some(xx) => {
+                match serde_json::from_str::<Response>(&xx) {
+                    Ok(r) => med.push(serde_json::to_value(r).unwrap_or(serde_json::json!({"error": "parse failed"}))),
+                    Err(_) => med.push(serde_json::json!({"uuid": e.uuid, "name": e.name, "error": "cache parse failed"})),
+                }
+            }
+            None => {
+                med.push(serde_json::json!({"uuid": e.uuid, "name": e.name, "hash": e.hash, "port": e.port}));
+            }
+        }
+    }
+    Ok(med)
 }

@@ -113,25 +113,42 @@ pub mod file_handler {
         match kv_as_disk_modes(file) {
             Ok(psa) => {
                 let play = Arc::new(RwLock::new(Colour::view_column(psa.len() as u64)));
-                let name = Arc::new(Colour::input_column("name").unwrap());
-                let server = Arc::new(loop {
-                    match Colour::input_column_def("network", "127.0.0.1:").unwrap().parse::<SocketAddr>() {
-                        Ok(e) => { break e; }
-                        Err(e) => { eprintln!("{}", e) }
-                    }
+                let name = Arc::new(Colour::input_column("name").unwrap_or_else(|_| "default".to_string()));
+                let server = Arc::new({
+                    let addr = loop {
+                        match Colour::input_column_def("network", "127.0.0.1:"){
+                            Ok(input) => match input.parse::<SocketAddr>() {
+                                Ok(e) => break e,
+                                Err(e) => eprintln!("{}", e),
+                            },
+                            Err(_) => break "127.0.0.1:8964".parse().unwrap(),
+                        }
+                    };
+                    addr
                 });
+                let apl_content = Arc::new(fs::read_to_string(LOCAL_BIN_APL.as_path()).unwrap_or_else(|e| {
+                    eprintln!("APL 文件读取失败 ({}): 使用空内容", e);
+                    String::new()
+                }));
                 psa.into_iter().for_each(|i| {
                     let play = play.clone();
                     let name = name.clone();
                     let server = server.clone();
-                    let file=Arc::new(fs::read_to_string(LOCAL_BIN_APL.as_path()).unwrap());
+                    let file = apl_content.clone();
                     xls.push(FutureEx::AsyncTraitSimple(Box::pin(async move {
                         let kv = i;
                         play.write().inc(1);
-                        let uuid = kv.key.clone().unwrap();
+                        let uuid = match kv.key.clone() {
+                            Some(k) => k,
+                            None => {
+                                eprintln!("跳过无 key 的文件条目");
+                                return Err(ThreadEvents::UnknownError(anyhow!("KV 条目缺少 key")));
+                            }
+                        };
+                        let uuid_str = uuid.to_string();
                         let kv = KVStore {
                             hash: None,
-                            key: Some(dbg!(kv.key.unwrap().to_string())),
+                            key: Some(uuid_str.clone()),
                             value: kv.value,
                         };
                         match match modes {
@@ -258,7 +275,9 @@ pub mod file_handler {
     pub fn kv_as_disk_modes<P: AsRef<Path>>(ts: P) -> Events<Vec<KVStore<Uuid, Vec<u8>>>> {
         let mut x = vec![];
         kv_store(ts)?.into_iter().for_each(|e| {
-            x.push(KVStore::from((e.key.unwrap(), e.value)))
+            if let Some(key) = e.key {
+                x.push(KVStore::from((key, e.value)));
+            }
         });
         Ok(x)
     }
@@ -303,11 +322,19 @@ impl From<(String, PathBuf)> for KVStore<String, Vec<u8>> {
 }
 
 impl From<(Uuid, PathBuf)> for KVStore<Uuid, Vec<u8>> {
-    #[deny(useless_deprecated)]
     fn from(value: (Uuid, PathBuf)) -> Self {
-        let mut xx = vec![];
-        let mut mlx = BufReader::new(File::open(value.1).unwrap());
-        mlx.read_to_end(&mut xx).unwrap();
+        let xx = match File::open(&value.1) {
+            Ok(f) => {
+                let mut buf = vec![];
+                let mut reader = BufReader::new(f);
+                let _ = reader.read_to_end(&mut buf);
+                buf
+            }
+            Err(e) => {
+                eprintln!("无法读取文件 {:?}: {}", value.1, e);
+                vec![]
+            }
+        };
         KVStore {
             hash: None,
             key: Some(value.0),
