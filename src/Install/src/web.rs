@@ -431,7 +431,8 @@ async fn api_upload_file(
         key: Some(uuid_str.clone()),
         value: body.to_vec(),
     };
-    let integrity = temp_kv.hash_write().await;
+    // 使用 write() 以 UUID 为 key 存储，与 download 的 read() 匹配
+    let integrity = temp_kv.write().await;
     let hash_str = integrity.to_string();
     let def_port = SUPER_DLR_URL.load().port.to_string();
 
