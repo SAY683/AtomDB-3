@@ -194,6 +194,7 @@
 let API_KEY = '';
 let currentUuid = null;
 let treeData = {};
+let currentItems = []; // 当前目录的文件列表
 let selectedUuids = new Set();
 
 // 启动时自动获取 API 密钥（从服务器 internal 端点）
@@ -234,10 +235,24 @@ async function apiFetch(method, path, body) {
 }
 
 async function refreshTree() {
+  async function fetchChildren(parentUuid) {
+    const r = await apiFetch('GET', '/api/v2/files' + (parentUuid ? '/' + parentUuid : ''));
+    if (!r.success) return;
+    const data = r.data;
+    const items = data.children || data;
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      treeData[item.uuid] = item;
+      if (item.is_dir) await fetchChildren(item.uuid);
+    }
+  }
   const r = await apiFetch('GET', '/api/v2/files');
   if (!r.success) { document.getElementById('treeRoot').innerHTML = '<div class="tree-item" style="color:var(--red)">⚠️ 加载失败</div>'; return; }
   treeData = {};
-  for (const item of r.data || []) treeData[item.uuid] = item;
+  for (const item of r.data || []) {
+    treeData[item.uuid] = item;
+    if (item.is_dir) await fetchChildren(item.uuid);
+  }
   renderTree();
 }
 
@@ -273,14 +288,16 @@ function renderFileList(resp) {
   const data = resp.data;
   let items = data.children || data;
   if (!Array.isArray(items)) items = [data];
-  if (!items || !items.length) {
+  currentItems = items || [];
+  if (!currentItems.length) {
     el.innerHTML = '<div class="empty-state"><div class="big-icon">📂</div><p>此目录为空</p></div>';
     return;
   }
   el.innerHTML = '<div class="file-list">';
   // 全选行
+  const allSelected = currentItems.every(i => selectedUuids.has(i.uuid));
   el.innerHTML += `<div class="file-row" style="border-bottom:2px solid var(--border)">
-    <input type="checkbox" onchange="toggleAll(this.checked)" ${selectedUuids.size === items.filter(i=>!i.parent_uuid||i.parent_uuid===currentUuid).length ? 'checked' : ''}>
+    <input type="checkbox" onchange="toggleAll(this.checked)" ${allSelected && currentItems.length > 0 ? 'checked' : ''}>
     <span style="flex:1;font-size:12px;color:var(--muted)">全选 / 反选</span>
     <span style="font-size:12px;color:var(--muted)">${selectedUuids.size} 项已选</span>
   </div>`;
@@ -461,9 +478,7 @@ function pickDir(uuid) {
   });
 }
 function toggleAll(checked) {
-  // 获取当前目录所有可见文件项
-  const items = Object.values(treeData).filter(i => i.parent_uuid === currentUuid || (!i.parent_uuid && !currentUuid));
-  items.forEach(i => {
+  currentItems.forEach(i => {
     if (checked) selectedUuids.add(i.uuid); else selectedUuids.delete(i.uuid);
   });
   updateSelUI();
