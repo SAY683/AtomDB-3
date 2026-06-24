@@ -14,7 +14,6 @@ use serde::Serialize;
 use uuid::Uuid;
 use Static::{Events, LOCAL_DB};
 use Error::ThreadEvents;
-use crate::io::{Disk, KVStore};
 use crate::sql_url::OrmEX;
 use crate::setting::database_config::{FileNode, FileSymlink, ApiKey};
 use crate::setting::local_config::SUPER_DLR_URL;
@@ -211,20 +210,37 @@ fn node_to_json(n: &FileNode) -> serde_json::Value {
 // ======================== 列表子目录 ========================
 
 async fn list_children(parent_uuid: Option<&str>) -> HttpResponse {
-    let rb = match get_vfs_db().await {
-        Ok(rb) => rb,
+    // 使用 SeaORM 执行带 NULL 安全的条件查询（绕过 rbatis 的 NULL 条件兼容问题）
+    use sea_orm::ConnectionTrait;
+    let pool = match crate::web::get_sql_pool().await {
+        Ok(p) => p,
         Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 错误: {}", e)),
     };
-    let conn = match rb.acquire().await {
-        Ok(c) => c,
-        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("连接失败: {}", e)),
+    let sql = if parent_uuid.is_some() {
+        "SELECT uuid, parent_uuid, name, is_dir, content_hash, file_size, created_at FROM file_node WHERE parent_uuid = $1 ORDER BY is_dir DESC, name ASC"
+    } else {
+        "SELECT uuid, parent_uuid, name, is_dir, content_hash, file_size, created_at FROM file_node WHERE parent_uuid IS NULL ORDER BY is_dir DESC, name ASC"
     };
-
-    // 全量拉取后在 Rust 侧按 parent_uuid 过滤（rbatis 的 Null 条件不可靠）
-    let all = FileNode::select_by_map(&conn, rbs::value!{}).await.unwrap_or_default();
-    let nodes: Vec<&FileNode> = all.iter().filter(|n| n.parent_uuid.as_deref() == parent_uuid).collect();
-
-    let items: Vec<serde_json::Value> = nodes.into_iter().map(|n| node_to_json(n)).collect();
+    let stmt = match parent_uuid {
+        Some(pid) => sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres, sql, vec![sea_orm::Value::String(Some(Box::new(pid.to_owned())))]
+        ),
+        None => sea_orm::Statement::from_string(sea_orm::DbBackend::Postgres, sql.to_string()),
+    };
+    let results = match pool.query_all(stmt).await {
+        Ok(r) => r,
+        Err(e) => return json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("查询失败: {}", e)),
+    };
+    let items: Vec<serde_json::Value> = results.iter().filter_map(|r| {
+        Some(serde_json::json!({
+            "uuid": r.try_get::<String>("", "uuid").ok()?,
+            "name": r.try_get::<String>("", "name").ok()?,
+            "is_dir": r.try_get::<bool>("", "is_dir").ok()?,
+            "parent_uuid": r.try_get::<Option<String>>("", "parent_uuid").ok()?,
+            "file_size": r.try_get::<i64>("", "file_size").ok()?,
+            "content_hash": r.try_get::<Option<String>>("", "content_hash").ok()?,
+        }))
+    }).collect();
     json_ok(items)
 }
 
@@ -275,13 +291,12 @@ async fn api_upload_file(req: HttpRequest, body: web::Bytes) -> impl Responder {
             Err(e) => json_err(actix_web::http::StatusCode::CONFLICT, &format!("创建目录失败: {}", e)),
         }
     } else {
-        // 文件: 写入 cacache
-        let temp_kv = KVStore {
-            hash: None,
-            key: Some(node_uuid.clone()),
-            value: body.to_vec(),
+        // 文件: 写入 cacache（直接使用 cacache API 避免 KVStore 的 .expect() panic）
+        let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+        let integrity = match cacache::write(cache_dir, &node_uuid, body.as_ref()).await {
+            Ok(i) => i,
+            Err(e) => return json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("存储失败: {}", e)),
         };
-        let integrity = temp_kv.write().await;
         let size = body.len() as i64;
 
         let node = FileNode {
@@ -423,18 +438,23 @@ async fn api_overwrite_file(req: HttpRequest, path: web::Path<String>, body: web
     }
     drop(conn);
 
-    // 覆盖 cacache 内容
-    let kv = KVStore {
-        hash: None,
-        key: Some(uuid.clone()),
-        value: body.to_vec(),
+    // 覆盖 cacache 内容（直接使用 cacache API 避免 KVStore 的 .expect() panic）
+    let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+    let integrity = match cacache::write(cache_dir, &uuid, body.as_ref()).await {
+        Ok(i) => i,
+        Err(e) => return json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("存储失败: {}", e)),
     };
-    let integrity = kv.write().await;
     let size = body.len() as i64;
 
     // 更新数据库记录
-    let rb = get_vfs_db().await.unwrap();
-    let conn = rb.acquire().await.unwrap();
+    let rb = match get_vfs_db().await {
+        Ok(rb) => rb,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("DB 错误: {}", e)),
+    };
+    let conn = match rb.acquire().await {
+        Ok(c) => c,
+        Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("连接失败: {}", e)),
+    };
     match conn.exec(
         "UPDATE file_node SET content_hash = $1, file_size = $2, updated_at = NOW() WHERE uuid = $3",
         vec![
@@ -464,13 +484,22 @@ async fn api_delete_node(req: HttpRequest, path: web::Path<String>) -> impl Resp
         Err(e) => return json_err(actix_web::http::StatusCode::SERVICE_UNAVAILABLE, &format!("连接失败: {}", e)),
     };
 
+    // 级联删除前先收集所有子节点 UUID（用于清理 cacache）
+    let children = FileNode::select_by_map(&conn, rbs::value!{"parent_uuid": &uuid}).await.unwrap_or_default();
+    let child_uuids: Vec<String> = children.into_iter().map(|c| c.uuid).collect();
+
     // 级联删除: symlink → file_node (CASCADE 自动处理)
     let _ = FileSymlink::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await;
     let _ = FileNode::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await;
+    drop(conn);
 
-    // 尝试从 cacache 清理（忽略错误）
-    let kv = KVStore { hash: None, key: Some(uuid.clone()), value: String::new() };
-    kv.remove().await;
+    // 从 cacache 清理（直接 API 避免 KVStore panic）
+    let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+    for uid in std::iter::once(&uuid).chain(child_uuids.iter()) {
+        if let Err(e) = cacache::remove(cache_dir, uid).await {
+            eprintln!("[AtomDB] cacache 清理警告 ({}): {}", uid, e);
+        }
+    }
 
     json_ok(serde_json::json!({"deleted": uuid}))
 }

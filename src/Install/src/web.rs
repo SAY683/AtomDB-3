@@ -13,7 +13,6 @@ use crate::api_v2;
 use Static::alex::Overmaster;
 use Static::base::FutureEx;
 use Error::ThreadEvents;
-use crate::io::{Disk, KVStore};
 use crate::setting::database_config::{Database, Service};
 use crate::setting::local_config::{SUPER_DLR_URL, SUPER_URL};
 use crate::sql_url::{OrmEX, Url};
@@ -36,7 +35,7 @@ async fn get_global_db() -> Events<&'static RBatis> {
 ///# Sea-ORM 连接池（用于处理中文文本查询，绕过 rbatis 的参数绑定问题）
 static SQL_POOL: OnceCell<sea_orm::DatabaseConnection> = OnceCell::new();
 
-async fn get_sql_pool() -> Events<&'static sea_orm::DatabaseConnection> {
+pub async fn get_sql_pool() -> Events<&'static sea_orm::DatabaseConnection> {
     match SQL_POOL.get() {
         Some(pool) => Ok(pool),
         None => {
@@ -445,13 +444,11 @@ async fn api_delete_database(path: web::Path<String>) -> impl Responder {
     // 删除 database 记录，确认存在后再清理 cacache
     match Database::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await {
         Ok(r) if r.rows_affected > 0 => {
-            // 从 cacache 删除数据
-            let kv = KVStore {
-                hash: None,
-                key: Some(uuid.clone()),
-                value: String::new(),
-            };
-            kv.remove().await;
+            // 从 cacache 删除（直接 API 避免 KVStore panic）
+            let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+            if let Err(e) = cacache::remove(cache_dir, &uuid).await {
+                eprintln!("[AtomDB] cacache 清理警告: {}", e);
+            }
             json_ok(serde_json::json!({"deleted": uuid}))
         }
         Ok(_) => json_err(actix_web::http::StatusCode::NOT_FOUND, "数据库未找到"),
@@ -485,14 +482,12 @@ async fn api_upload_file(
 
     let uuid = Uuid::new_v4();
     let uuid_str = uuid.to_string();
-    // 构造临时 KVStore 并写入 cacache（key 用 uuid_str 满足 AsRef<str>）
-    let temp_kv = KVStore {
-        hash: None,
-        key: Some(uuid_str.clone()),
-        value: body.to_vec(),
+    // 直接写入 cacache 避免 KVStore 的 .expect() panic
+    let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+    let integrity = match cacache::write(cache_dir, &uuid_str, &body).await {
+        Ok(i) => i,
+        Err(e) => return json_err(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &format!("存储失败: {}", e)),
     };
-    // 使用 write() 以 UUID 为 key 存储，与 download 的 read() 匹配
-    let integrity = temp_kv.write().await;
     let hash_str = integrity.to_string();
     let def_port = SUPER_DLR_URL.load().port.to_string();
 
@@ -542,13 +537,11 @@ async fn api_delete_file(path: web::Path<String>) -> impl Responder {
     let _ = Service::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await;
     match Database::delete_by_map(&conn, rbs::value!{"uuid": &uuid}).await {
         Ok(r) if r.rows_affected > 0 => {
-            // 从 cacache 删除数据
-            let kv = KVStore {
-                hash: None,
-                key: Some(uuid.clone()),
-                value: String::new(),
-            };
-            kv.remove().await;
+            // 从 cacache 删除（直接 API 避免 KVStore panic）
+            let cache_dir = Static::LOCAL_DB.to_str().unwrap_or("Data");
+            if let Err(e) = cacache::remove(cache_dir, &uuid).await {
+                eprintln!("[AtomDB] cacache 清理警告: {}", e);
+            }
             json_ok(serde_json::json!({"deleted": uuid}))
         }
         Ok(_) => json_err(actix_web::http::StatusCode::NOT_FOUND, "文件未找到"),
