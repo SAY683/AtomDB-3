@@ -252,9 +252,11 @@ async fn api_database_detail(path: web::Path<String>) -> impl Responder {
 
 async fn download(filename: web::Path<String>) -> impl Responder {
     let raw = filename.into_inner();
-    // 防 CRLF 注入 + 路径穿越：只允许安全字符
-    let filename: String = raw.chars().filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == '.').collect();
-    if filename.is_empty() || filename != raw {
+    // 防 CRLF 注入 + 路径穿越：只剔除危险字符（CR、LF、空、路径分隔符），保留中文等合法字符
+    let filename: String = raw.chars().filter(|c| {
+        !c.is_control() && *c != '/' && *c != '\\' && *c != ':' && *c != '<' && *c != '>' && *c != '|' && *c != '"' && *c != '?'
+    }).collect();
+    if filename.is_empty() || filename.contains("..") {
         return json_err(actix_web::http::StatusCode::BAD_REQUEST, "文件名包含非法字符");
     }
     match download_file(&filename).await {
